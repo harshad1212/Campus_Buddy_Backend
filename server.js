@@ -11,13 +11,9 @@ const path = require("path");
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 const fs = require("fs");
+
+// Routes
 const resourceRoutes = require("./routes/resourceRoutes");
-
-// Add this line after `app.use(express.json());`
-app.use("/api/resources", resourceRoutes);
-
-// Serve uploaded files
-app.use("/uploads/resources", express.static(path.join(__dirname, "uploads/resources")));
 
 // Models
 const User = require("./models/User");
@@ -25,14 +21,14 @@ const Room = require("./models/Room");
 const Message = require("./models/Message");
 const Resource = require("./models/Resource");
 
-// App setup
+// --- App setup ---
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(bodyParser.json());
 
-// Uploads dir
-const upload = multer({ dest: path.join(__dirname, "uploads") });
+// Serve uploaded files
+app.use("/uploads/resources", express.static(path.join(__dirname, "uploads/resources")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // --- MONGOOSE CONNECT ---
@@ -50,6 +46,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
 function signToken(user) {
   return jwt.sign({ id: user._id.toString(), name: user.name }, JWT_SECRET, { expiresIn: "1d" });
 }
+
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "No token" });
@@ -69,12 +66,8 @@ async function authMiddleware(req, res, next) {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true, credentials: true } });
 const chatNs = io.of("/chat");
-app.use("/api/resources", resourceRoutes);
 
-// Serve uploaded files
-app.use("/uploads/resources", express.static(path.join(__dirname, "uploads/resources")));
-
-// --- AUTH (Register/Login) ---
+// --- AUTH Routes ---
 app.post("/api/register", async (req, res) => {
   const { name, email, password } = req.body;
   try {
@@ -114,7 +107,7 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// --- ROOMS ---
+// --- ROOM & CHAT Routes ---
 app.get("/api/rooms", authMiddleware, async (req, res) => {
   const allRooms = await Room.find().populate("members", "name avatarUrl");
   res.json(allRooms);
@@ -157,22 +150,12 @@ app.get("/api/rooms/:roomId/messages", authMiddleware, async (req, res) => {
   res.json(msgs);
 });
 
-// --- FILE UPLOAD ---
-app.post("/api/upload", authMiddleware, upload.array("files"), (req, res) => {
-  const files = req.files.map((f) => ({
-    url: `/uploads/${f.filename}`,
-    filename: f.originalname,
-    type: f.mimetype.startsWith("image/") ? "image" : "file",
-  }));
-  res.json(files);
-});
-
-
-// Create upload folder for resources
+// --- RESOURCES SETUP ---
+// Create upload folder if not exists
 const resourcePath = path.join(__dirname, "uploads", "resources");
 if (!fs.existsSync(resourcePath)) fs.mkdirSync(resourcePath, { recursive: true });
 
-// Multer setup for resources
+// Multer for resource uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, resourcePath),
   filename: (req, file, cb) => {
@@ -182,7 +165,7 @@ const storage = multer.diskStorage({
 });
 const resourceUpload = multer({ storage });
 
-// 📤 Upload Resource
+// Upload Resource
 app.post("/api/resources/upload", authMiddleware, resourceUpload.single("file"), async (req, res) => {
   try {
     const file = req.file;
@@ -194,12 +177,11 @@ app.post("/api/resources/upload", authMiddleware, resourceUpload.single("file"),
       subject: req.body.subject,
       course: req.body.course,
       semester: req.body.semester,
-      tags: req.body.tags ? req.body.tags.split(",").map(t => t.trim()) : [],
       fileUrl: `/uploads/resources/${file.filename}`,
       fileType: file.mimetype,
       fileName: file.originalname,
       uploader: req.user._id,
-      approved: true, // You can change to false if you want admin approval
+      approved: true,
     });
 
     await resource.save();
@@ -212,21 +194,21 @@ app.post("/api/resources/upload", authMiddleware, resourceUpload.single("file"),
   }
 });
 
-// 📚 Get All Resources (Search, Filter)
+// Get All Resources
 app.get("/api/resources", authMiddleware, async (req, res) => {
   const { search, subject, course, semester } = req.query;
   const query = { approved: true };
 
-  if (search) query.$text = { $search: search };
+  if (search) query.title = { $regex: search, $options: "i" };
   if (subject) query.subject = subject;
   if (course) query.course = course;
-  if (semester) query.semester = semester;
+  if (semester) query.semester = Number(semester);
 
   const resources = await Resource.find(query).populate("uploader", "name avatarUrl").sort({ createdAt: -1 });
   res.json(resources);
 });
 
-// ❤️ Like / Unlike Resource
+// Like / Unlike Resource
 app.post("/api/resources/:id/like", authMiddleware, async (req, res) => {
   const resource = await Resource.findById(req.params.id);
   if (!resource) return res.status(404).json({ error: "Resource not found" });
@@ -239,11 +221,10 @@ app.post("/api/resources/:id/like", authMiddleware, async (req, res) => {
 
   await resource.save();
   chatNs.emit("resource:like", { resourceId: resource._id.toString(), userId });
-
   res.json({ likes: resource.likes.length });
 });
 
-// 💬 Comment on Resource
+// Comment on Resource
 app.post("/api/resources/:id/comment", authMiddleware, async (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: "Comment cannot be empty" });
@@ -256,11 +237,10 @@ app.post("/api/resources/:id/comment", authMiddleware, async (req, res) => {
   await resource.save();
   await resource.populate("comments.user", "name avatarUrl");
   chatNs.emit("resource:comment", { resourceId: resource._id.toString(), comment });
-
   res.json(resource.comments);
 });
 
-// 📥 Download Resource
+// Download Resource
 app.get("/api/resources/:id/download", authMiddleware, async (req, res) => {
   const resource = await Resource.findById(req.params.id);
   if (!resource) return res.status(404).json({ error: "Resource not found" });
@@ -271,14 +251,8 @@ app.get("/api/resources/:id/download", authMiddleware, async (req, res) => {
   res.redirect(resource.fileUrl);
 });
 
-// ======================================================
-// 🚀 RESOURCES FEATURE ENDS HERE
-// ======================================================
-
-
-// --- SOCKET.IO SETUP ---
+// --- SOCKET.IO Setup ---
 const onlineUsers = new Map();
-
 chatNs.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next(new Error("No token"));

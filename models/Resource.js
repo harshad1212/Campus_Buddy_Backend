@@ -4,8 +4,8 @@ const resourceSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: String,
   subject: String,
-  course: String,
-  semester: String,
+  stream: String,
+  semester: Number,
   tags: [String],
   fileUrl: { type: String, required: true }, // path or Cloud URL
   fileName: { type: String },
