@@ -1,3 +1,4 @@
+
 // server/server.js
 require("dotenv").config();
 const express = require("express");
@@ -19,6 +20,22 @@ const User = require("./models/User");
 const Room = require("./models/Room");
 const Message = require("./models/Message");
 
+
+
+const cloudinary = require('cloudinary').v2;
+
+
+// Cloudinary config
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+
+
+
+
 // App setup
 const app = express();
 app.use(helmet());
@@ -36,8 +53,9 @@ app.use(
 );
 
 // Multer uploads dir
-const upload = multer({ dest: path.join(__dirname, "uploads") });
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+
+
 
 // --- MONGOOSE CONNECT ---
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/chat-app";
@@ -51,6 +69,71 @@ mongoose
     console.error("MongoDB connection error:", err);
     process.exit(1);
   });
+
+
+
+
+const fs = require("fs");
+const upload = multer({ dest: "uploads/" }); // local temp folder
+
+app.post("/api/upload", authMiddleware, upload.array("files"), async (req, res) => {
+  try {
+    const uploadedFiles = [];
+
+    for (const f of req.files) {
+      console.log("Uploading:", f.originalname, "| MIME:", f.mimetype);
+
+      // Determine type
+      let fType = "other";
+      if (f.mimetype.startsWith("image/")) fType = "image";
+      else if (f.mimetype.startsWith("video/")) fType = "video";
+      else if (f.mimetype === "application/pdf" || f.originalname.toLowerCase().endsWith(".pdf")) fType = "pdf";
+      else if (f.mimetype.includes("word") || f.originalname.match(/\.(doc|docx)$/i)) fType = "word";
+      else if (f.mimetype.includes("excel") || f.originalname.match(/\.(xls|xlsx)$/i)) fType = "excel";
+
+
+        
+    let resourceType = "auto";
+    if (fType === "video") resourceType = "video";
+    else if (
+      fType === "pdf" ||
+      fType === "word" ||
+      fType === "excel" ||
+      fType === "other"
+    ) {
+      resourceType = "raw"; // ✅ for non-image documents
+    }
+
+
+      // Upload to Cloudinary
+      const result = await cloudinary.uploader.upload(f.path, {
+        folder: "chat_attachments",
+        resource_type: resourceType, // auto-detect (image, pdf, etc.)
+        public_id: `${Date.now()}_${path.parse(f.originalname).name}`, // avoid double extension
+      });
+       
+      // Delete temp file
+      fs.unlinkSync(f.path);
+       console.log("cloudinaryid",result.public_id);
+      // Add to output list
+      uploadedFiles.push({
+        url: result.secure_url,
+        filename: f.originalname,
+        type: fType,
+        cloudinaryId: result.public_id,
+      });
+    }
+
+    res.json(uploadedFiles);
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(500).json({ error: "File upload failed" });
+  }
+});
+
+
+
+
 
 // --- JWT Helpers ---
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
@@ -185,21 +268,152 @@ app.get("/api/rooms/:roomId/messages", authMiddleware, async (req, res) => {
   }
 
   const msgs = await Message.find({ chat: roomId })
-    .populate("sender", "name avatarUrl")
-    .sort({ createdAt: 1 });
+  .populate("sender", "name avatarUrl")           // existing
+  .populate({
+    path: "replyTo",                             // <-- populate replyTo
+    populate: { path: "sender", select: "name avatarUrl" },
+  })
+  .sort({ createdAt: 1 });
+
 
   res.json(msgs);
 });
 
-// --- File Upload stub ---
-app.post("/api/upload", authMiddleware, upload.array("files"), (req, res) => {
-  const files = req.files.map((f) => ({
-    url: `/uploads/${f.filename}`,
-    filename: f.originalname,
-    type: f.mimetype.startsWith("image/") ? "image" : "file",
-  }));
-  res.json(files);
+
+
+// DELETE a message
+app.delete("/api/messages/:messageId", authMiddleware, async (req, res) => {
+  const { messageId } = req.params;
+  console.log("Delete request.body:", req.body);
+  const { cloudinaryIds = [] } = req.body || {};
+  console.log("Delete message request:", messageId, cloudinaryIds);
+  // ✅ Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(messageId)) {
+    return res.status(400).json({ error: "Invalid message ID" });
+  }
+
+  try {
+    // ✅ Find the message in DB
+    const message = await Message.findById(messageId);
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    // ✅ Only allow sender to delete their own message
+    if (message.sender.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: "Not authorized to delete this message" });
+    }
+
+    // ✅ Collect Cloudinary IDs to delete
+    const idsToDelete =
+      cloudinaryIds.length > 0
+        ? cloudinaryIds
+        : message.attachments?.map((a) => a.cloudinaryId).filter(Boolean) || [];
+
+    // ✅ Delete files from Cloudinary
+    if (idsToDelete.length > 0) {
+      for (const id of idsToDelete) {
+        try {
+          // Detect resource type from attachment info if available
+          const att = message.attachments?.find((a) => a.cloudinaryId === id);
+          let resourceType = "raw"; // default for pdf, docx, zip, etc.
+          if (att?.type === "image") resourceType = "image";
+          else if (att?.type === "video") resourceType = "video";
+
+          await cloudinary.uploader.destroy(id, { resource_type: resourceType });
+          console.log(`✅ Deleted Cloudinary file: ${id}`);
+        } catch (err) {
+          console.warn(`⚠️ Failed to delete Cloudinary file (${id}):`, err.message);
+        }
+      }
+    }
+
+    // ✅ Delete message from MongoDB
+    await message.deleteOne();
+
+    // ✅ Notify room via Socket.IO
+    chatNs.to(message.chat.toString()).emit("message-deleted", { messageId });
+
+    res.json({ status: "ok", messageId });
+  } catch (err) {
+    console.error("❌ Delete message error:", err);
+    res.status(500).json({ error: "Server error while deleting message" });
+  }
 });
+
+
+
+
+
+
+app.put("/api/messages/:messageId", authMiddleware, async (req, res) => {
+  const { messageId } = req.params;
+  const { content } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(messageId)) {
+    return res.status(400).json({ error: "Invalid message ID" });
+  }
+
+  try {
+    const message = await Message.findById(messageId);
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    if (message.sender.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: "Not authorized to edit this message" });
+    }
+
+    message.content = content;
+    await message.save();
+    await message.populate("sender", "name avatarUrl");
+
+    chatNs.to(message.chat.toString()).emit("message-updated", message);
+
+    res.json(message);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+// Favorite a message
+app.post("/api/messages/:messageId/favorite", authMiddleware, async (req, res) => {
+  const { messageId } = req.params;
+  try {
+    const message = await Message.findByIdAndUpdate(
+      messageId,
+      { $addToSet: { favorites: req.user._id } },
+      { new: true }
+    );
+    if (!message) return res.status(404).json({ error: "Message not found" });
+    chatNs.to(message.chat.toString()).emit("message-updated", message);
+    res.json(message);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Unfavorite a message
+app.post("/api/messages/:messageId/unfavorite", authMiddleware, async (req, res) => {
+  const { messageId } = req.params;
+  try {
+    const message = await Message.findByIdAndUpdate(
+      messageId,
+      { $pull: { favorites: req.user._id } },
+      { new: true }
+    );
+    if (!message) return res.status(404).json({ error: "Message not found" });
+    chatNs.to(message.chat.toString()).emit("message-updated", message);
+    res.json(message);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+
+
+// --- File Upload stub ---
+
+
 
 // --- Socket.IO Setup ---
 /**
@@ -318,59 +532,60 @@ chatNs.on("connection", async (socket) => {
     socket.leave(roomId);
   });
 
+  
   socket.on("send-message", async (payload, ack) => {
     try {
-      const { chatId, content, attachments, clientTempId } = payload;
+      const { chatId, content, attachments = [], clientTempId, forwarded = false, replyTo = null } = payload;
+
+      const replyId = replyTo?._id || replyTo || null;
+          console.log("attachments:", attachments);
       const msgDoc = new Message({
         chat: chatId,
         sender: user._id,
         content,
-        attachments: attachments || [],
-        readBy: [user._id], // sender has 'read' it
+        attachments, // already supports uploaded files
+        readBy: [user._id],
+        forwarded,
+        replyTo: replyId,
       });
+
       await msgDoc.save();
       await msgDoc.populate("sender", "name avatarUrl");
 
-      const msgToEmit = { ...msgDoc.toObject(), clientTempId };
-      // emit to room
-      chatNs.to(chatId).emit("new-message", msgToEmit);
+      // Populate replyTo if exists
+      if (replyId) {
+        await msgDoc.populate({
+          path: "replyTo",
+          select: "content sender attachments",
+          populate: { path: "sender", select: "name avatarUrl" },
+        });
 
-      // After saving message, update unread counts for members (exclude sender)
-      try {
-        const room = await Room.findById(chatId);
-        if (room) {
-          const members = room.members.map((m) => m.toString());
-          const affectedMembers = members.filter((m) => m !== uid);
-          // For each affected member, compute their unread messages from the sender or total unread for that chat
-          for (const memberId of affectedMembers) {
-            // Count unread messages in this chat for that member
-            const unreadCount = await Message.countDocuments({
-              chat: chatId,
-              readBy: { $ne: memberId },
-            });
-            // Emit a targeted unread update for that member
-            const sockets = onlineUsers.get(memberId);
-            if (sockets && sockets.size > 0) {
-              for (const sid of sockets) {
-                chatNs.to(sid).emit("user-unread", {
-                  userId: memberId,
-                  chatId,
-                  unreadCount,
-                });
-              }
-            }
-          }
+        // Ensure attachments have type
+        if (msgDoc.replyTo.attachments?.length) {
+          msgDoc.replyTo.attachments = msgDoc.replyTo.attachments.map(att => ({
+            ...(att.toObject ? att.toObject() : att),
+            type: att.type || "other",
+          }));
         }
-      } catch (e) {
-        console.warn("Failed to compute per-member unread counts:", e.message || e);
       }
 
-      if (ack) ack({ status: "ok", message: msgDoc });
+      // Convert to plain object and include clientTempId
+      const msgObj = { ...msgDoc.toObject(), clientTempId };
+
+      // Emit to room
+      chatNs.to(chatId).emit("new-message", msgObj);
+
+      // Send back ack with the same plain object so frontend can update status
+      if (ack) ack({ status: "ok", message: msgObj });
     } catch (err) {
       console.error("send-message error:", err);
       if (ack) ack({ status: "error", error: err.message });
     }
   });
+
+
+
+
 
   // typing with debounce to avoid spam
   socket.on("typing", ({ chatId, isTyping }) => {
