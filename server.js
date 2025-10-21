@@ -20,6 +20,8 @@ const User = require("./models/User");
 const Room = require("./models/Room");
 const Message = require("./models/Message");
 
+const passwordResetRoutes = require("./routes/passwordReset");
+
 
 
 const cloudinary = require('cloudinary').v2;
@@ -56,6 +58,9 @@ app.use(
 
 
 
+
+
+app.use("/api/password", passwordResetRoutes);
 
 // --- MONGOOSE CONNECT ---
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/chat-app";
