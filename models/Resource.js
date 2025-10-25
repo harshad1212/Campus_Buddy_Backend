@@ -1,25 +1,22 @@
 const mongoose = require("mongoose");
 
+const commentSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  text: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
 const resourceSchema = new mongoose.Schema({
-  title: { type: String, required: true },
+  title: String,
   description: String,
-  subject: { type: String, required: true },
-  stream: { type: String, required: true },
-  semester: { type: Number, required: true },
-  tags: [String],
-  fileUrl: { type: String, required: true },
-  fileName: { type: String },
-  fileType: { type: String },
-  uploader: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  stream: String,
+  semester: Number,
+  subject: String,
+  fileUrl: String,
+  fileName: String,
+  uploader: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  comments: [
-    {
-      user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-      text: String,
-      createdAt: { type: Date, default: Date.now },
-    },
-  ],
-  downloadCount: { type: Number, default: 0 },
+  comments: [commentSchema],
   createdAt: { type: Date, default: Date.now },
 });
 
