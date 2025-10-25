@@ -54,7 +54,9 @@ app.use(
 
 // Multer uploads dir
 
-
+// --- RESOURCE ROUTE ---
+const resourceRoutes = require("./routes/resourceRoutes");
+app.use("/api/resources", resourceRoutes);
 
 
 // --- MONGOOSE CONNECT ---
@@ -69,6 +71,7 @@ mongoose
     console.error("MongoDB connection error:", err);
     process.exit(1);
   });
+
 
 
 
