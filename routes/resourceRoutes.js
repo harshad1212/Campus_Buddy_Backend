@@ -87,4 +87,58 @@ router.get("/", authMiddleware, async (req, res) => {
 });
 
 
+// ❤️ Like / Unlike resource
+router.post("/:id/like", authMiddleware, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    if (!resource) return res.status(404).json({ message: "Resource not found" });
+
+    const userId = req.user.id;
+    const alreadyLiked = resource.likes.includes(userId);
+
+    if (alreadyLiked) {
+      resource.likes = resource.likes.filter((uid) => uid.toString() !== userId);
+    } else {
+      resource.likes.push(userId);
+    }
+
+    await resource.save();
+
+    res.json({
+      liked: !alreadyLiked,
+      likesCount: resource.likes.length,
+    });
+  } catch (err) {
+    console.error("Like error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// 💬 Add Comment
+router.post("/:id/comment", authMiddleware, async (req, res) => {
+  try {
+    const { text } = req.body;
+    const resource = await Resource.findById(req.params.id);
+    if (!resource) return res.status(404).json({ message: "Resource not found" });
+
+    const newComment = {
+      user: req.user.id,
+      text,
+      createdAt: new Date(),
+    };
+
+    resource.comments.push(newComment);
+    await resource.save();
+
+    const populated = await Resource.findById(req.params.id)
+      .populate("comments.user", "name")
+      .lean();
+
+    res.json(populated.comments);
+  } catch (err) {
+    console.error("Comment error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;
