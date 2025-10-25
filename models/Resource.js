@@ -3,14 +3,14 @@ const mongoose = require("mongoose");
 const resourceSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: String,
-  subject: String,
-  stream: String,
-  semester: Number,
+  subject: { type: String, required: true },
+  stream: { type: String, required: true },
+  semester: { type: Number, required: true },
   tags: [String],
-  fileUrl: { type: String, required: true }, // path or Cloud URL
+  fileUrl: { type: String, required: true },
   fileName: { type: String },
   fileType: { type: String },
-  uploader: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  uploader: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   comments: [
     {
