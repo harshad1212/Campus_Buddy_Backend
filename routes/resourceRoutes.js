@@ -8,65 +8,58 @@ const { authMiddleware } = require("../middleware/auth");
 
 const router = express.Router();
 
-// 🔧 Cloudinary Configuration
+// Cloudinary Config
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ✅ Multer setup for temporary local storage
 const upload = multer({ dest: "uploads/resources" });
 
-// ✅ Upload resource and preserve original file format + name
+// Upload Resource
 router.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   try {
     const { title, description, subject, stream, semester } = req.body;
     const file = req.file;
-
     if (!file) return res.status(400).json({ error: "No file uploaded" });
 
-    // 🧹 Clean and preserve filename with extension
-    const ext = path.extname(file.originalname); // e.g. ".pptx"
-    const baseName = path.basename(file.originalname, ext).replace(/\s+/g, "_"); // remove spaces
-    const cleanName = `${baseName}${ext}`; // e.g. "MyFile.pptx"
+    const ext = path.extname(file.originalname);
+    const baseName = path.basename(file.originalname, ext).replace(/\s+/g, "_");
+    const cleanName = `${baseName}${ext}`;
 
-    // 🔥 Upload to Cloudinary (preserve extension)
     const result = await cloudinary.uploader.upload(file.path, {
       folder: "resources_uploads",
       resource_type: "raw",
-      public_id: cleanName, // keep same name
+      public_id: cleanName,
       use_filename: true,
       unique_filename: false,
-      format: ext.substring(1), // ensure extension (pptx, pdf, etc.)
+      format: ext.substring(1),
     });
 
-    // 🧹 Delete temp file after upload
     fs.unlinkSync(file.path);
 
-    // ✅ Save resource metadata in DB
     const newResource = new Resource({
       title,
       description,
       subject,
       stream,
       semester,
-      fileUrl: result.secure_url, // Cloudinary file URL
+      fileUrl: result.secure_url,
       fileName: cleanName,
       fileType: file.mimetype,
       uploader: req.user._id,
     });
 
     await newResource.save();
-
     res.status(201).json({ message: "Resource uploaded successfully", resource: newResource });
   } catch (err) {
-    console.error("❌ Upload Error:", err);
+    console.error("Upload Error:", err);
     res.status(500).json({ error: "Failed to upload resource" });
   }
 });
 
-// ✅ Get filtered resources
+// Get Resources (populated)
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const { stream, semester, subject } = req.query;
@@ -77,17 +70,17 @@ router.get("/", authMiddleware, async (req, res) => {
 
     const resources = await Resource.find(filters)
       .populate("uploader", "name email")
+      .populate("comments.user", "name")
       .sort({ createdAt: -1 });
 
     res.json(resources);
   } catch (err) {
-    console.error("❌ Fetch Error:", err);
+    console.error("Fetch Error:", err);
     res.status(500).json({ error: "Failed to fetch resources" });
   }
 });
 
-
-// ❤️ Like / Unlike resource
+// Like / Unlike Resource
 router.post("/:id/like", authMiddleware, async (req, res) => {
   try {
     const resource = await Resource.findById(req.params.id);
@@ -96,11 +89,8 @@ router.post("/:id/like", authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const alreadyLiked = resource.likes.includes(userId);
 
-    if (alreadyLiked) {
-      resource.likes = resource.likes.filter((uid) => uid.toString() !== userId);
-    } else {
-      resource.likes.push(userId);
-    }
+    if (alreadyLiked) resource.likes = resource.likes.filter((uid) => uid.toString() !== userId);
+    else resource.likes.push(userId);
 
     await resource.save();
 
@@ -114,27 +104,27 @@ router.post("/:id/like", authMiddleware, async (req, res) => {
   }
 });
 
-// 💬 Add Comment
+// Add Comment (Fully Populated)
 router.post("/:id/comment", authMiddleware, async (req, res) => {
   try {
     const { text } = req.body;
     const resource = await Resource.findById(req.params.id);
     if (!resource) return res.status(404).json({ message: "Resource not found" });
 
-    const newComment = {
-      user: req.user.id,
+    resource.comments.push({
+      user: req.user._id,
       text,
       createdAt: new Date(),
-    };
+    });
 
-    resource.comments.push(newComment);
     await resource.save();
 
+    // Fetch last comment fully populated
     const populated = await Resource.findById(req.params.id)
-      .populate("comments.user", "name")
-      .lean();
+      .populate("comments.user", "name");
 
-    res.json(populated.comments);
+    const lastComment = populated.comments[populated.comments.length - 1];
+    res.json(lastComment);
   } catch (err) {
     console.error("Comment error:", err);
     res.status(500).json({ message: "Server error" });
