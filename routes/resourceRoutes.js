@@ -17,7 +17,7 @@ cloudinary.config({
 
 const upload = multer({ dest: "uploads/resources" });
 
-// Upload Resource
+// 📁 Upload Resource
 router.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   try {
     const { title, description, subject, stream, semester } = req.body;
@@ -49,6 +49,7 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
       fileName: cleanName,
       fileType: file.mimetype,
       uploader: req.user._id,
+      downloadCount: 0, // 🆕 Added
     });
 
     await newResource.save();
@@ -59,7 +60,7 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
   }
 });
 
-// Get Resources (populated)
+// 📚 Get Resources
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const { stream, semester, subject } = req.query;
@@ -80,7 +81,7 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// Like / Unlike Resource
+// ❤️ Like / Unlike
 router.post("/:id/like", authMiddleware, async (req, res) => {
   try {
     const resource = await Resource.findById(req.params.id);
@@ -104,7 +105,7 @@ router.post("/:id/like", authMiddleware, async (req, res) => {
   }
 });
 
-// Add Comment (Fully Populated)
+// 💬 Add Comment
 router.post("/:id/comment", authMiddleware, async (req, res) => {
   try {
     const { text } = req.body;
@@ -119,14 +120,32 @@ router.post("/:id/comment", authMiddleware, async (req, res) => {
 
     await resource.save();
 
-    // Fetch last comment fully populated
-    const populated = await Resource.findById(req.params.id)
-      .populate("comments.user", "name");
-
+    const populated = await Resource.findById(req.params.id).populate("comments.user", "name");
     const lastComment = populated.comments[populated.comments.length - 1];
+
     res.json(lastComment);
   } catch (err) {
     console.error("Comment error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// 📥 Download Route (Increment Count)
+router.get("/:id/download", authMiddleware, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    if (!resource) return res.status(404).json({ message: "Resource not found" });
+
+    resource.downloadCount += 1;
+    await resource.save();
+
+    res.json({
+      message: "Download count updated",
+      fileUrl: resource.fileUrl,
+      downloadCount: resource.downloadCount,
+    });
+  } catch (err) {
+    console.error("Download error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
