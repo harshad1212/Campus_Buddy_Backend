@@ -150,4 +150,66 @@ router.get("/:id/download", authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Get all resources uploaded by the logged-in user
+router.get("/my", authMiddleware, async (req, res) => {
+  try {
+    // Use user ID from token or query parameter (fallback)
+    const uploaderId = req.query.uploaderId || req.user.id;
+
+    // Find all resources uploaded by this user
+    const resources = await Resource.find({ uploader: uploaderId })
+      .populate("uploader", "name email")
+      .sort({ createdAt: -1 });
+
+    if (!resources || resources.length === 0) {
+        return res.status(200).json([]); // ✅ Return empty array instead of 404
+      }
+    res.status(200).json(resources);
+
+    res.json(resources);
+  } catch (err) {
+    console.error("Error fetching user resources:", err);
+    res.status(500).json({ message: "Server error while fetching user resources." });
+  }
+});
+
+// ✅ Delete a resource by ID (only uploader can delete)
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const resourceId = req.params.id;
+    const userId = req.user.id;
+
+    // Find the resource
+    const resource = await Resource.findById(resourceId);
+
+    if (!resource) {
+      return res.status(404).json({ message: "Resource not found." });
+    }
+
+    // Check if the logged-in user is the uploader
+    if (resource.uploader.toString() !== userId) {
+      return res.status(403).json({ message: "You are not authorized to delete this resource." });
+    }
+
+    // If resource has a Cloudinary file, remove it
+    if (resource.fileUrl && resource.fileUrl.includes("cloudinary")) {
+      try {
+        const publicId = resource.fileUrl.split("/").pop().split(".")[0];
+        await cloudinary.uploader.destroy(publicId);
+      } catch (cloudErr) {
+        console.warn("Cloudinary delete warning:", cloudErr.message);
+      }
+    }
+
+    // Delete the resource from MongoDB
+    await Resource.findByIdAndDelete(resourceId);
+
+    res.status(200).json({ message: "Resource deleted successfully." });
+  } catch (err) {
+    console.error("Error deleting resource:", err);
+    res.status(500).json({ message: "Server error while deleting resource." });
+  }
+});
+
+
 module.exports = router;
