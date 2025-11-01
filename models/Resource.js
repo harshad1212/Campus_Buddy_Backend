@@ -22,6 +22,12 @@ const resourceSchema = new mongoose.Schema({
     default: 0,
   }, // 👈 Add this line
   createdAt: { type: Date, default: Date.now },
+  uploader: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "User",
+  required: true,
+},
+
 });
 
 module.exports = mongoose.model("Resource", resourceSchema);
