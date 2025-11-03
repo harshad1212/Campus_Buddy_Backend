@@ -17,7 +17,7 @@ cloudinary.config({
 
 const upload = multer({ dest: "uploads/resources" });
 
-// Upload Resource
+// 📁 Upload Resource
 router.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   try {
     const { title, description, subject, stream, semester } = req.body;
@@ -49,6 +49,7 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
       fileName: cleanName,
       fileType: file.mimetype,
       uploader: req.user._id,
+      downloadCount: 0, // 🆕 Added
     });
 
     await newResource.save();
@@ -59,7 +60,7 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
   }
 });
 
-// Get Resources (populated)
+// 📚 Get Resources
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const { stream, semester, subject } = req.query;
@@ -80,7 +81,7 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// Like / Unlike Resource
+// ❤️ Like / Unlike
 router.post("/:id/like", authMiddleware, async (req, res) => {
   try {
     const resource = await Resource.findById(req.params.id);
@@ -104,7 +105,7 @@ router.post("/:id/like", authMiddleware, async (req, res) => {
   }
 });
 
-// Add Comment (Fully Populated)
+// 💬 Add Comment
 router.post("/:id/comment", authMiddleware, async (req, res) => {
   try {
     const { text } = req.body;
@@ -119,16 +120,96 @@ router.post("/:id/comment", authMiddleware, async (req, res) => {
 
     await resource.save();
 
-    // Fetch last comment fully populated
-    const populated = await Resource.findById(req.params.id)
-      .populate("comments.user", "name");
-
+    const populated = await Resource.findById(req.params.id).populate("comments.user", "name");
     const lastComment = populated.comments[populated.comments.length - 1];
+
     res.json(lastComment);
   } catch (err) {
     console.error("Comment error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// 📥 Download Route (Increment Count)
+router.get("/:id/download", authMiddleware, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    if (!resource) return res.status(404).json({ message: "Resource not found" });
+
+    resource.downloadCount += 1;
+    await resource.save();
+
+    res.json({
+      message: "Download count updated",
+      fileUrl: resource.fileUrl,
+      downloadCount: resource.downloadCount,
+    });
+  } catch (err) {
+    console.error("Download error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ✅ Get all resources uploaded by the logged-in user
+router.get("/my", authMiddleware, async (req, res) => {
+  try {
+    // Use user ID from token or query parameter (fallback)
+    const uploaderId = req.query.uploaderId || req.user.id;
+
+    // Find all resources uploaded by this user
+    const resources = await Resource.find({ uploader: uploaderId })
+      .populate("uploader", "name email")
+      .sort({ createdAt: -1 });
+
+    if (!resources || resources.length === 0) {
+        return res.status(200).json([]); // ✅ Return empty array instead of 404
+      }
+    res.status(200).json(resources);
+
+    res.json(resources);
+  } catch (err) {
+    console.error("Error fetching user resources:", err);
+    res.status(500).json({ message: "Server error while fetching user resources." });
+  }
+});
+
+// ✅ Delete a resource by ID (only uploader can delete)
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const resourceId = req.params.id;
+    const userId = req.user.id;
+
+    // Find the resource
+    const resource = await Resource.findById(resourceId);
+
+    if (!resource) {
+      return res.status(404).json({ message: "Resource not found." });
+    }
+
+    // Check if the logged-in user is the uploader
+    if (resource.uploader.toString() !== userId) {
+      return res.status(403).json({ message: "You are not authorized to delete this resource." });
+    }
+
+    // If resource has a Cloudinary file, remove it
+    if (resource.fileUrl && resource.fileUrl.includes("cloudinary")) {
+      try {
+        const publicId = resource.fileUrl.split("/").pop().split(".")[0];
+        await cloudinary.uploader.destroy(publicId);
+      } catch (cloudErr) {
+        console.warn("Cloudinary delete warning:", cloudErr.message);
+      }
+    }
+
+    // Delete the resource from MongoDB
+    await Resource.findByIdAndDelete(resourceId);
+
+    res.status(200).json({ message: "Resource deleted successfully." });
+  } catch (err) {
+    console.error("Error deleting resource:", err);
+    res.status(500).json({ message: "Server error while deleting resource." });
+  }
+});
+
 
 module.exports = router;
