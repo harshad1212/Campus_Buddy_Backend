@@ -19,13 +19,10 @@ const morgan = require("morgan");
 const User = require("./models/User");
 const Room = require("./models/Room");
 const Message = require("./models/Message");
-
 const passwordResetRoutes = require("./routes/passwordReset");
 
-
-
+const eventRoutes = require("./routes/events");
 const cloudinary = require('cloudinary').v2;
-
 
 // Cloudinary config
 cloudinary.config({
@@ -34,10 +31,6 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-
-
-
-
 // App setup
 const app = express();
 app.use(helmet());
@@ -45,6 +38,7 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(morgan("dev"));
+app.use("/api/events", eventRoutes);
 
 // Rate limiter
 app.use(
@@ -59,9 +53,6 @@ app.use(
 // --- RESOURCE ROUTE ---
 const resourceRoutes = require("./routes/resourceRoutes");
 app.use("/api/resources", resourceRoutes);
-
-
-
 app.use("/api/password", passwordResetRoutes);
 
 // --- MONGOOSE CONNECT ---
@@ -76,10 +67,6 @@ mongoose
     console.error("MongoDB connection error:", err);
     process.exit(1);
   });
-
-
-
-
 
 const fs = require("fs");
 const upload = multer({ dest: "uploads/" }); // local temp folder
