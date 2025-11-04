@@ -17,6 +17,7 @@ const resourceSchema = new mongoose.Schema({
   uploader: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   comments: [commentSchema],
+  universityId: { type: mongoose.Schema.Types.ObjectId, ref: "University", required: true },
   downloadCount: {
     type: Number,
     default: 0,
