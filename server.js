@@ -564,11 +564,32 @@ chatNs.on("connection", async (socket) => {
         }
       }
 
+      msgDoc.createdAt = msgDoc.createdAt || new Date();
       // Convert to plain object and include clientTempId
       const msgObj = { ...msgDoc.toObject(), clientTempId };
 
-      // Emit to room
-      chatNs.to(chatId).emit("new-message", msgObj);
+     // ✅ Emit to all room members except sender
+const room = await Room.findById(chatId).select("members");
+if (room && room.members?.length) {
+  room.members.forEach((memberId) => {
+    const memberStr = memberId.toString();
+    const socketSet = onlineUsers.get(memberStr);
+    if (socketSet && memberStr !== uid) {
+      for (const sid of socketSet) {
+        chatNs.to(sid).emit("new-message", msgObj); // send to other users
+      }
+    }
+  });
+}
+
+// ✅ Still emit to sender for confirmation (so it updates status)
+const senderSockets = onlineUsers.get(uid);
+if (senderSockets) {
+  for (const sid of senderSockets) {
+    chatNs.to(sid).emit("new-message", msgObj);
+  }
+}
+
 
       // Send back ack with the same plain object so frontend can update status
       if (ack) ack({ status: "ok", message: msgObj });
@@ -576,6 +597,7 @@ chatNs.on("connection", async (socket) => {
       console.error("send-message error:", err);
       if (ack) ack({ status: "error", error: err.message });
     }
+    
   });
 
 
@@ -644,7 +666,7 @@ chatNs.on("connection", async (socket) => {
       if (set.size === 0) {
         onlineUsers.delete(uid);
         // broadcast offline presence
-        socket.broadcast.emit("presence", { userId: uid, online: false });
+        socket.emit("presence", { userId: uid, online: false });
         // re-emit light user list
         await emitLightUserList();
       } else {
