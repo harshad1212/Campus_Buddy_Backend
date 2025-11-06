@@ -3,7 +3,7 @@ const bcrypt = require("bcrypt");
 const RegisterRequest = require("../models/RegisterRequest");
 const User = require("../models/User");
 const University = require("../models/University");
-const sendEmail = require("../utils/mailer");
+const transporter = require("../utils/mailer");
 
 const router = express.Router();
 
@@ -41,19 +41,17 @@ router.post("/approve-request/:id", async (req, res) => {
     const request = await RegisterRequest.findById(id);
     if (!request) return res.status(404).json({ error: "Request not found" });
 
-    // ✅ Check if user already exists
+    // Check if user already exists
     const existingUser = await User.findOne({ email: request.email });
     if (existingUser)
       return res.status(400).json({ error: "User already registered" });
 
-    // ✅ Find the university
-    const university = await University.findOne({
-      code: request.universityCode,
-    });
+    // Find the university
+    const university = await University.findOne({ code: request.universityCode });
     if (!university)
       return res.status(404).json({ error: "University not found" });
 
-    // ✅ Hash password and create new user
+    // Hash password and create new user
     const hashedPassword = await bcrypt.hash(request.password, 10);
     const newUser = new User({
       name: request.name,
@@ -65,12 +63,10 @@ router.post("/approve-request/:id", async (req, res) => {
     });
     await newUser.save();
 
-    // ✅ Update request status
-    request.status = "approved";
-    request.isApproved = true;
-    await request.save();
+    // ✅ Delete the request after approval
+    await RegisterRequest.findByIdAndDelete(id);
 
-    // ✅ Send Approval Email
+    // Send Approval Email
     const htmlTemplate = `
       <div style="font-family:Arial, sans-serif; padding:20px; border-radius:10px; background-color:#f9f9f9; border:1px solid #ddd;">
         <h2 style="color:#2b6cb0;">🎉 Registration Approved!</h2>
@@ -82,7 +78,7 @@ router.post("/approve-request/:id", async (req, res) => {
       </div>
     `;
 
-    await sendEmail({
+    await transporter({
       to: request.email,
       subject: "🎉 Registration Approved - CampusBuddy",
       html: htmlTemplate,
@@ -90,12 +86,13 @@ router.post("/approve-request/:id", async (req, res) => {
     });
 
     console.log("✅ Approved request and user registered:", request.email);
-    res.json({ message: "User approved and email sent successfully" });
+    res.json({ message: "User approved, request deleted, and email sent successfully" });
   } catch (err) {
     console.error("❌ Error approving request:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 /**
  * ✅ POST reject registration request
@@ -106,10 +103,7 @@ router.post("/reject-request/:id", async (req, res) => {
     const request = await RegisterRequest.findById(id);
     if (!request) return res.status(404).json({ error: "Request not found" });
 
-    request.status = "rejected";
-    await request.save();
-
-    // ✅ Send Rejection Email
+    // Send Rejection Email
     const htmlTemplate = `
       <div style="font-family:Arial, sans-serif; padding:20px; border-radius:10px; background-color:#fff3f3; border:1px solid #f5c2c2;">
         <h2 style="color:#e53e3e;">❌ Registration Rejected</h2>
@@ -120,19 +114,23 @@ router.post("/reject-request/:id", async (req, res) => {
       </div>
     `;
 
-    await sendEmail({
+    await transporter({
       to: request.email,
       subject: "❌ Registration Rejected - CampusBuddy",
       html: htmlTemplate,
       text: `Hello ${request.name}, your registration request was rejected by the university admin.`,
     });
 
+    // ✅ Delete the request after sending email
+    await RegisterRequest.findByIdAndDelete(id);
+
     console.log("⚠️ Rejected request and email sent to:", request.email);
-    res.json({ message: "Request rejected and email sent successfully" });
+    res.json({ message: "Request rejected, deleted, and email sent successfully" });
   } catch (err) {
     console.error("❌ Error rejecting request:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 module.exports = router;
