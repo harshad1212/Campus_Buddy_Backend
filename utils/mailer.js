@@ -2,21 +2,37 @@
 const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com", // Gmail SMTP host
+  host: "smtp.gmail.com",
   port: 587,
-  secure: false, // use TLS
+  secure: false, // TLS
   auth: {
-    user: process.env.EMAIL_USER, // your Gmail
-    pass: process.env.EMAIL_PASS, // your Gmail App Password (not account password)
+    user: process.env.EMAIL_USER, // Gmail address
+    pass: process.env.EMAIL_PASS, // Gmail App Password
   },
 });
 
+// Verify transporter connection
 transporter.verify((err, success) => {
-  if (err) {
-    console.error("❌ Email transporter error:", err);
-  } else {
-    console.log("✅ Email transporter ready to send emails");
-  }
+  if (err) console.error("❌ Email transporter error:", err);
+  else console.log("✅ Email transporter ready to send emails");
 });
 
-module.exports = transporter;
+/**
+ * sendEmail - A helper function to send emails easily
+ */
+async function sendEmail({ to, subject, html, text }) {
+  try {
+    await transporter.sendMail({
+      from: `"CampusBuddy" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html,
+      text,
+    });
+    console.log(`📧 Email sent to ${to}`);
+  } catch (error) {
+    console.error("❌ Error sending email:", error);
+  }
+}
+
+module.exports = sendEmail;
