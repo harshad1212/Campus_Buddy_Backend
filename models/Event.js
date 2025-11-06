@@ -7,6 +7,7 @@ const eventSchema = new mongoose.Schema({
   time: String,
   venue: String,
   creatorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  universityId: { type: mongoose.Schema.Types.ObjectId, ref: "University", required: true },
   creatorName: String,
   approvedByAdmin: { type: Boolean, default: false },
   approvedAt: { type: Date },
