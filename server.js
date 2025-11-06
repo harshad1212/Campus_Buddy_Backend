@@ -28,7 +28,6 @@ const adminRoutes = require("./routes/adminRoutes");
 const universityRoutes = require("./routes/universityRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const registerRequestRoutes = require("./routes/registerRequestRoutes");
-const authRoutes = require("./routes/authRoutes");
 
 // Cloudinary config
 cloudinary.config({
@@ -48,7 +47,6 @@ app.use("/api/events", eventRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/university", universityRoutes);
 app.use("/api/superadmin", superAdminRoutes);
-app.use("/api/auth", authRoutes);
 app.use("/api", registerRequestRoutes);
 
 // Rate limiter
@@ -314,7 +312,7 @@ app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find user and populate their university info
+    // Find user and populate university info
     const user = await User.findOne({ email }).populate("universityId", "code name");
     if (!user) return res.status(404).json({ error: "User not found" });
 
@@ -323,7 +321,23 @@ app.post("/api/login", async (req, res) => {
 
     const token = signToken(user);
 
-    // Send back user data with university info
+    // ✅ Always include university info for admins, teachers, and students
+    let universityCode = null;
+    let universityName = null;
+
+    if (user.universityId) {
+      universityCode = user.universityId.code;
+      universityName = user.universityId.name;
+    } else if (user.role === "admin") {
+      // Admin may be linked through University model’s adminId
+      const uni = await University.findOne({ adminId: user._id });
+      if (uni) {
+        universityCode = uni.code;
+        universityName = uni.name;
+      }
+    }
+
+    // ✅ Send response
     res.json({
       message: "Login successful",
       token,
@@ -334,8 +348,8 @@ app.post("/api/login", async (req, res) => {
         role: user.role,
         avatarUrl: user.avatarUrl,
         universityId: user.universityId?._id || null,
-        universityName: user.universityId?.name || null,
-        universityCode: user.universityId?.code || null, // ✅ added field
+        universityCode, // ✅ always included now
+        universityName,
       },
     });
   } catch (err) {
