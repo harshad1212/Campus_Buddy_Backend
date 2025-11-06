@@ -27,6 +27,8 @@ const cloudinary = require('cloudinary').v2;
 const adminRoutes = require("./routes/adminRoutes");
 const universityRoutes = require("./routes/universityRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
+const registerRequestRoutes = require("./routes/registerRequestRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 // Cloudinary config
 cloudinary.config({
@@ -46,6 +48,8 @@ app.use("/api/events", eventRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/university", universityRoutes);
 app.use("/api/superadmin", superAdminRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api", registerRequestRoutes);
 
 // Rate limiter
 app.use(
@@ -177,33 +181,54 @@ const chatNs = io.of("/chat");
 // --- Auth (register/login) ---
 app.post("/api/register", async (req, res) => {
   try {
-    const { name, email, password, role, universityName, universityCode } = req.body;
-
-    if (!name || !email || !password || !role)
-      return res.status(400).json({ error: "All fields are required" });
-
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ error: "Email already registered" });
+    const {
+      name,
+      email,
+      password,
+      role,
+      universityName,
+      universityCode,
+      teacherCode,
+      studentCode,
+    } = req.body; // ✅ Extract from request body
 
     let university;
 
-    // 🏫 Admin registering → creates a new university
     if (role === "admin") {
-      if (!universityName || !universityCode)
-        return res.status(400).json({ error: "University name & code required" });
+      if (
+        !universityName ||
+        !universityCode ||
+        !teacherCode ||
+        !studentCode ||
+        !email ||
+        !password
+      ) {
+        return res.status(400).json({
+          error:
+            "University name, code, email, password, teacherCode, and studentCode are required",
+        });
+      }
 
       const existingUni = await University.findOne({ code: universityCode });
       if (existingUni)
-        return res.status(400).json({ error: "University code already exists" });
+        return res
+          .status(400)
+          .json({ error: "University code already exists" });
 
+      // ✅ Hash the password before saving
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // ✅ Create the University
       university = await University.create({
         name: universityName,
         code: universityCode,
         email,
+        password: hashedPassword,
+        teacherCode,
+        studentCode,
         adminId: null,
       });
     } else if (role === "superadmin") {
-      // 👑 Superadmin doesn’t belong to a university
       university = null;
     } else {
       // 👩‍🎓 Student / 👨‍🏫 Teacher → must join existing university
@@ -212,8 +237,10 @@ app.post("/api/register", async (req, res) => {
         return res.status(404).json({ error: "Invalid university code" });
     }
 
+    // ✅ Hash the user's password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // ✅ Create User
     const user = await User.create({
       name,
       email,
@@ -223,7 +250,7 @@ app.post("/api/register", async (req, res) => {
       avatarUrl: `https://i.pravatar.cc/150?u=${email}`,
     });
 
-    // Assign admin to university
+    // ✅ Assign admin to university
     if (role === "admin" && university) {
       university.adminId = user._id;
       await university.save();
@@ -238,19 +265,82 @@ app.post("/api/register", async (req, res) => {
 });
 
 
-app.post("/api/login", async (req, res) => {
-  const { email, password } = req.body;
+// --- USER REGISTRATION REQUEST (Student/Teacher Pending Approval) ---
+app.post("/api/register-request", async (req, res) => {
   try {
-    const user = await User.findOne({ email });
+    const { name, email, password, role, universityCode, registrationCode } = req.body;
+
+    // ✅ Validate required fields
+    if (!name || !email || !password || !role || !universityCode || !registrationCode)
+      return res.status(400).json({ error: "All fields are required" });
+
+    // ✅ Find university by code
+    const university = await University.findOne({ code: universityCode });
+    if (!university) return res.status(404).json({ error: "Invalid university code" });
+
+    // ✅ Check correct code
+    const correctCode =
+      role === "teacher" ? university.teacherCode : university.studentCode;
+    if (registrationCode !== correctCode)
+      return res.status(403).json({ error: "Invalid registration code" });
+
+    // ✅ Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // ✅ Save as unapproved user
+    const newUser = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      role,
+      universityId: university._id,
+      isApproved: false, // add this field in schema if not already
+    });
+
+    console.log(`📩 New registration request: ${name} (${role}) for ${university.name}`);
+
+    res.status(201).json({
+      message: "Registration request sent! Admin will review and approve.",
+      userId: newUser._id,
+    });
+  } catch (err) {
+    console.error("Register Request Error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+app.post("/api/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find user and populate their university info
+    const user = await User.findOne({ email }).populate("universityId", "code name");
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(401).json({ error: "Invalid password" });
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
 
     const token = signToken(user);
-    res.json({ user, token });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+
+    // Send back user data with university info
+    res.json({
+      message: "Login successful",
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatarUrl: user.avatarUrl,
+        universityId: user.universityId?._id || null,
+        universityName: user.universityId?.name || null,
+        universityCode: user.universityId?.code || null, // ✅ added field
+      },
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
@@ -710,6 +800,8 @@ chatNs.on("connection", async (socket) => {
     typingTimers.delete(socket.id);
   });
 });
+
+
 
 // --- Start ---
 const PORT = process.env.PORT || 4000;
