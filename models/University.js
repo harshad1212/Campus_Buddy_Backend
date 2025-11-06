@@ -7,7 +7,6 @@ const universitySchema = new mongoose.Schema({
   password: { type: String, required: true }, // hashed admin password
   logoUrl: { type: String, default: "" },
   domain: { type: String, default: "" },
-  isApproved: { type: Boolean, default: false },
   teacherCode: { type: String, required: true },
   studentCode: { type: String, required: true },
   theme: {

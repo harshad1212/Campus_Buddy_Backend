@@ -15,16 +15,17 @@ const userSchema = new Schema(
     universityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "University",
-      required: true,
+      required: false, // ✅ for superadmin (no university)
     },
     resetToken: String,
     resetTokenExpiry: Date,
     avatarUrl: String,
 
-    // 👇 New fields for friend system
-    friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // received
-    sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // sent
+    // 👇 THIS IS THE IMPORTANT FIX
+    isApproved: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

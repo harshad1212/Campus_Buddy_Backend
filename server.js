@@ -27,6 +27,7 @@ const cloudinary = require('cloudinary').v2;
 const adminRoutes = require("./routes/adminRoutes");
 const universityRoutes = require("./routes/universityRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
+const registerRequestRoutes = require("./routes/registerRequestRoutes");
 
 // Cloudinary config
 cloudinary.config({
@@ -46,6 +47,7 @@ app.use("/api/events", eventRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/university", universityRoutes);
 app.use("/api/superadmin", superAdminRoutes);
+app.use("/api", registerRequestRoutes);
 
 // Rate limiter
 app.use(
@@ -241,16 +243,51 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
   try {
-    const user = await User.findOne({ email });
+    const { email, password } = req.body;
+
+    // Find user and populate university info
+    const user = await User.findOne({ email }).populate("universityId", "code name");
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: "Invalid password" });
 
     const token = signToken(user);
-    res.json({ user, token });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+
+    // ✅ Always include university info for admins, teachers, and students
+    let universityCode = null;
+    let universityName = null;
+
+    if (user.universityId) {
+      universityCode = user.universityId.code;
+      universityName = user.universityId.name;
+    } else if (user.role === "admin") {
+      // Admin may be linked through University model’s adminId
+      const uni = await University.findOne({ adminId: user._id });
+      if (uni) {
+        universityCode = uni.code;
+        universityName = uni.name;
+      }
+    }
+
+    // ✅ Send response
+    res.json({
+      message: "Login successful",
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatarUrl: user.avatarUrl,
+        universityId: user.universityId?._id || null,
+        universityCode, // ✅ always included now
+        universityName,
+      },
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
