@@ -14,6 +14,7 @@ const bcrypt = require("bcrypt");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const morgan = require("morgan");
+const University = require("./models/University");
 
 // Models
 const User = require("./models/User");
@@ -23,6 +24,9 @@ const passwordResetRoutes = require("./routes/passwordReset");
 
 const eventRoutes = require("./routes/events");
 const cloudinary = require('cloudinary').v2;
+const adminRoutes = require("./routes/adminRoutes");
+const universityRoutes = require("./routes/universityRoutes");
+const superAdminRoutes = require("./routes/superAdminRoutes");
 
 // Cloudinary config
 cloudinary.config({
@@ -39,6 +43,9 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(morgan("dev"));
 app.use("/api/events", eventRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/university", universityRoutes);
+app.use("/api/superadmin", superAdminRoutes);
 
 // Rate limiter
 app.use(
@@ -133,8 +140,18 @@ app.post("/api/upload", authMiddleware, upload.array("files"), async (req, res) 
 // --- JWT Helpers ---
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
 function signToken(user) {
-  return jwt.sign({ id: user._id.toString(), name: user.name }, JWT_SECRET, { expiresIn: "1d" });
+  return jwt.sign(
+    {
+      id: user._id.toString(),
+      name: user.name,
+      role: user.role,
+      universityId: user.universityId || null,
+    },
+    JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 }
+
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "No token" });
@@ -159,30 +176,67 @@ const chatNs = io.of("/chat");
 
 // --- Auth (register/login) ---
 app.post("/api/register", async (req, res) => {
-  const { name, email, password } = req.body;
   try {
+    const { name, email, password, role, universityName, universityCode } = req.body;
+
+    if (!name || !email || !password || !role)
+      return res.status(400).json({ error: "All fields are required" });
+
     const existing = await User.findOne({ email });
-    if (existing) {
-      return res.status(400).json({ error: "Email already registered" });
+    if (existing) return res.status(400).json({ error: "Email already registered" });
+
+    let university;
+
+    // 🏫 Admin registering → creates a new university
+    if (role === "admin") {
+      if (!universityName || !universityCode)
+        return res.status(400).json({ error: "University name & code required" });
+
+      const existingUni = await University.findOne({ code: universityCode });
+      if (existingUni)
+        return res.status(400).json({ error: "University code already exists" });
+
+      university = await University.create({
+        name: universityName,
+        code: universityCode,
+        email,
+        adminId: null,
+      });
+    } else if (role === "superadmin") {
+      // 👑 Superadmin doesn’t belong to a university
+      university = null;
+    } else {
+      // 👩‍🎓 Student / 👨‍🏫 Teacher → must join existing university
+      university = await University.findOne({ code: universityCode });
+      if (!university)
+        return res.status(404).json({ error: "Invalid university code" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = new User({
+    const user = await User.create({
       name,
       email,
       password: hashedPassword,
+      role,
+      universityId: university ? university._id : null,
       avatarUrl: `https://i.pravatar.cc/150?u=${email}`,
     });
-    await user.save();
+
+    // Assign admin to university
+    if (role === "admin" && university) {
+      university.adminId = user._id;
+      await university.save();
+    }
 
     const token = signToken(user);
-    console.log(token);
-    res.json({ user, token });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(201).json({ message: "Registered successfully", user, token });
+  } catch (err) {
+    console.error("Registration error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
+
 
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
@@ -194,12 +248,12 @@ app.post("/api/login", async (req, res) => {
     if (!valid) return res.status(401).json({ error: "Invalid password" });
 
     const token = signToken(user);
-    
     res.json({ user, token });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
+
 
 // --- Users endpoint (initial sidebar data) ---
 app.get("/api/users", authMiddleware, async (req, res) => {
