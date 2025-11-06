@@ -627,7 +627,7 @@ chatNs.on("connection", async (socket) => {
               });
             }
           }
-        } catch (e) {
+        } catch (e) { 
           // ignore
         }
       }
