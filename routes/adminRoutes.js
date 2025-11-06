@@ -1,34 +1,63 @@
-// server/routes/adminRoutes.js
+// routes/adminRoutes.js
 const express = require("express");
-const { authMiddleware } = require("../middleware/auth");
-const {
-  getDashboardStats,
-  getPendingResources,
-  approveResource,
-  rejectResource,
-  getPendingEvents,
-  approveEvent,
-  rejectEvent,
-  manageUsers,
-  toggleBanUser
-} = require("../controllers/adminController");
+const User = require("../models/User");
+const University = require("../models/University");
 
 const router = express.Router();
 
-// Protect all admin routes
-router.use(authMiddleware);
+// --- Get all pending requests ---
+router.get("/pending-requests/:universityCode", async (req, res) => {
+  try {
+    const { universityCode } = req.params;
 
-// Admin routes
-router.get("/stats", getDashboardStats);
-router.get("/resources/pending", getPendingResources);
-router.put("/resources/approve/:id", approveResource);
-router.delete("/resources/reject/:id", rejectResource);
+    const university = await University.findOne({ code: universityCode });
+    if (!university)
+      return res.status(404).json({ error: "University not found" });
 
-router.get("/events/pending", getPendingEvents);
-router.put("/events/approve/:id", approveEvent);
-router.delete("/events/reject/:id", rejectEvent);
+    const pendingUsers = await User.find({
+      universityId: university._id,
+      isApproved: false,
+    }).select("name email role universityId");
 
-router.get("/users", manageUsers);
-router.put("/users/toggle-ban/:id", toggleBanUser);
+    res.json(pendingUsers);
+  } catch (err) {
+    console.error("Fetch pending requests error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// --- Approve user ---
+router.post("/approve-request/:id", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).populate("universityId");
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    user.isApproved = true;
+    await user.save();
+
+    console.log(`✅ Approved ${user.name} (${user.email})`);
+
+    res.json({ message: "User approved successfully" });
+  } catch (err) {
+    console.error("Approve request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// --- Reject user ---
+router.post("/reject-request/:id", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await user.deleteOne();
+    console.log(`❌ Rejected ${user.name} (${user.email})`);
+
+    res.json({ message: "User rejected successfully" });
+  } catch (err) {
+    console.error("Reject request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 module.exports = router;
