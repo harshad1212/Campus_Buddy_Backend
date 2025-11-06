@@ -177,67 +177,118 @@ const io = new Server(server, {
 const chatNs = io.of("/chat");
 
 // --- Auth (register/login) ---
+// --- Auth (register/login) ---
 app.post("/api/register", async (req, res) => {
   try {
-    const { name, email, password, role, universityName, universityCode } = req.body;
+    const {
+      name,
+      email,
+      password,
+      role,
+      universityName,
+      universityCode,
+      teacherCode,
+      studentCode,
+    } = req.body;
 
+    // Basic validation
     if (!name || !email || !password || !role)
       return res.status(400).json({ error: "All fields are required" });
 
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ error: "Email already registered" });
+    const existingUser = await User.findOne({ email });
+    if (existingUser)
+      return res.status(400).json({ error: "Email already registered" });
 
-    let university;
+    let university = null;
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 🏫 Admin registering → creates a new university
+    // 🏫 Admin registering → create a new university with admin info
     if (role === "admin") {
-      if (!universityName || !universityCode)
-        return res.status(400).json({ error: "University name & code required" });
+      if (!universityName || !universityCode || !teacherCode || !studentCode)
+        return res
+          .status(400)
+          .json({ error: "University info & registration codes required" });
 
       const existingUni = await University.findOne({ code: universityCode });
       if (existingUni)
         return res.status(400).json({ error: "University code already exists" });
 
+      // Create University with admin email/password
       university = await University.create({
         name: universityName,
         code: universityCode,
         email,
-        adminId: null,
+        password: hashedPassword,
+        teacherCode,
+        studentCode,
+        adminId: null, // will link after creating User
       });
-    } else if (role === "superadmin") {
-      // 👑 Superadmin doesn’t belong to a university
-      university = null;
-    } else {
-      // 👩‍🎓 Student / 👨‍🏫 Teacher → must join existing university
-      university = await University.findOne({ code: universityCode });
-      if (!university)
-        return res.status(404).json({ error: "Invalid university code" });
+
+      // Create User for the admin
+      const adminUser = await User.create({
+        name,
+        email,
+        password: hashedPassword,
+        role: "admin",
+        universityId: university._id,
+        avatarUrl: `https://i.pravatar.cc/150?u=${email}`,
+      });
+
+      // Link adminId in University
+      university.adminId = adminUser._id;
+      await university.save();
+
+      const token = signToken(adminUser);
+      return res.status(201).json({
+        message: "University and admin registered successfully",
+        user: adminUser,
+        token,
+      });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 👑 Superadmin doesn’t belong to a university
+    if (role === "superadmin") {
+      const superadminUser = await User.create({
+        name,
+        email,
+        password: hashedPassword,
+        role,
+        avatarUrl: `https://i.pravatar.cc/150?u=${email}`,
+      });
+      const token = signToken(superadminUser);
+      return res.status(201).json({
+        message: "Superadmin registered successfully",
+        user: superadminUser,
+        token,
+      });
+    }
+
+    // 👩‍🎓 Student / 👨‍🏫 Teacher → join existing university
+    university = await University.findOne({ code: universityCode });
+    if (!university)
+      return res.status(404).json({ error: "Invalid university code" });
 
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
       role,
-      universityId: university ? university._id : null,
+      universityId: university._id,
       avatarUrl: `https://i.pravatar.cc/150?u=${email}`,
     });
 
-    // Assign admin to university
-    if (role === "admin" && university) {
-      university.adminId = user._id;
-      await university.save();
-    }
-
     const token = signToken(user);
-    res.status(201).json({ message: "Registered successfully", user, token });
+    res.status(201).json({
+      message: "User registered successfully",
+      user,
+      token,
+    });
   } catch (err) {
     console.error("Registration error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 
 app.post("/api/login", async (req, res) => {
