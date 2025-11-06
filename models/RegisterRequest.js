@@ -9,6 +9,10 @@ const registerRequestSchema = new mongoose.Schema(
     universityCode: { type: String, required: true },
     registrationCode: { type: String, required: true },
     status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+    isApproved: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
