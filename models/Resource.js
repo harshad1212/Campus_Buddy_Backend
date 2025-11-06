@@ -7,28 +7,27 @@ const commentSchema = new mongoose.Schema({
 });
 
 const resourceSchema = new mongoose.Schema({
-  title: String,
-  description: String,
-  stream: String,
-  semester: Number,
-  subject: String,
-  fileUrl: String,
-  fileName: String,
-  uploader: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  title: { type: String, required: true },
+  description: { type: String },
+  stream: { type: String },
+  semester: { type: Number },
+  subject: { type: String },
+  fileUrl: { type: String, required: true },
+  fileName: { type: String },
+  uploader: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
   likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   comments: [commentSchema],
-  universityId: { type: mongoose.Schema.Types.ObjectId, ref: "University", required: true },
-  downloadCount: {
-    type: Number,
-    default: 0,
-  }, // 👈 Add this line
+  universityId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "University",
+    required: true,
+  },
+  downloadCount: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
-  uploader: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: "User",
-  required: true,
-},
-
 });
 
 module.exports = mongoose.model("Resource", resourceSchema);
