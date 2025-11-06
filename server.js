@@ -179,54 +179,33 @@ const chatNs = io.of("/chat");
 // --- Auth (register/login) ---
 app.post("/api/register", async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      password,
-      role,
-      universityName,
-      universityCode,
-      teacherCode,
-      studentCode,
-    } = req.body; // ✅ Extract from request body
+    const { name, email, password, role, universityName, universityCode } = req.body;
+
+    if (!name || !email || !password || !role)
+      return res.status(400).json({ error: "All fields are required" });
+
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(400).json({ error: "Email already registered" });
 
     let university;
 
+    // 🏫 Admin registering → creates a new university
     if (role === "admin") {
-      if (
-        !universityName ||
-        !universityCode ||
-        !teacherCode ||
-        !studentCode ||
-        !email ||
-        !password
-      ) {
-        return res.status(400).json({
-          error:
-            "University name, code, email, password, teacherCode, and studentCode are required",
-        });
-      }
+      if (!universityName || !universityCode)
+        return res.status(400).json({ error: "University name & code required" });
 
       const existingUni = await University.findOne({ code: universityCode });
       if (existingUni)
-        return res
-          .status(400)
-          .json({ error: "University code already exists" });
+        return res.status(400).json({ error: "University code already exists" });
 
-      // ✅ Hash the password before saving
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      // ✅ Create the University
       university = await University.create({
         name: universityName,
         code: universityCode,
         email,
-        password: hashedPassword,
-        teacherCode,
-        studentCode,
         adminId: null,
       });
     } else if (role === "superadmin") {
+      // 👑 Superadmin doesn’t belong to a university
       university = null;
     } else {
       // 👩‍🎓 Student / 👨‍🏫 Teacher → must join existing university
@@ -235,10 +214,8 @@ app.post("/api/register", async (req, res) => {
         return res.status(404).json({ error: "Invalid university code" });
     }
 
-    // ✅ Hash the user's password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ✅ Create User
     const user = await User.create({
       name,
       email,
@@ -248,7 +225,7 @@ app.post("/api/register", async (req, res) => {
       avatarUrl: `https://i.pravatar.cc/150?u=${email}`,
     });
 
-    // ✅ Assign admin to university
+    // Assign admin to university
     if (role === "admin" && university) {
       university.adminId = user._id;
       await university.save();
@@ -263,51 +240,6 @@ app.post("/api/register", async (req, res) => {
 });
 
 
-// --- USER REGISTRATION REQUEST (Student/Teacher Pending Approval) ---
-app.post("/api/register-request", async (req, res) => {
-  try {
-    const { name, email, password, role, universityCode, registrationCode } = req.body;
-
-    // ✅ Validate required fields
-    if (!name || !email || !password || !role || !universityCode || !registrationCode)
-      return res.status(400).json({ error: "All fields are required" });
-
-    // ✅ Find university by code
-    const university = await University.findOne({ code: universityCode });
-    if (!university) return res.status(404).json({ error: "Invalid university code" });
-
-    // ✅ Check correct code
-    const correctCode =
-      role === "teacher" ? university.teacherCode : university.studentCode;
-    if (registrationCode !== correctCode)
-      return res.status(403).json({ error: "Invalid registration code" });
-
-    // ✅ Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // ✅ Save as unapproved user
-    const newUser = await User.create({
-      name,
-      email,
-      password: hashedPassword,
-      role,
-      universityId: university._id,
-      isApproved: false, // add this field in schema if not already
-    });
-
-    console.log(`📩 New registration request: ${name} (${role}) for ${university.name}`);
-
-    res.status(201).json({
-      message: "Registration request sent! Admin will review and approve.",
-      userId: newUser._id,
-    });
-  } catch (err) {
-    console.error("Register Request Error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -316,8 +248,8 @@ app.post("/api/login", async (req, res) => {
     const user = await User.findOne({ email }).populate("universityId", "code name");
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(401).json({ error: "Invalid password" });
 
     const token = signToken(user);
 
@@ -383,6 +315,101 @@ app.get("/api/rooms", authMiddleware, async (req, res) => {
   const allRooms = await Room.find().populate("members", "name avatarUrl");
   res.json(allRooms);
 });
+
+app.post("/api/friends/request/:targetId", authMiddleware, async (req, res) => {
+  try {
+    const targetId = req.params.targetId;
+    if (req.user._id.toString() === targetId)
+      return res.status(400).json({ error: "Cannot send request to yourself" });
+
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) return res.status(404).json({ error: "User not found" });
+
+    // Prevent duplicates
+    if (
+      req.user.friends.includes(targetId) ||
+      req.user.sentRequests.includes(targetId) ||
+      req.user.friendRequests.includes(targetId)
+    ) {
+      return res.status(400).json({ error: "Friend request already exists" });
+    }
+
+    // Update both users
+    await User.findByIdAndUpdate(req.user._id, { $addToSet: { sentRequests: targetId } });
+    await User.findByIdAndUpdate(targetId, { $addToSet: { friendRequests: req.user._id } });
+
+    res.json({ message: "Friend request sent" });
+  } catch (err) {
+    console.error("Send friend request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.post("/api/friends/accept/:senderId", authMiddleware, async (req, res) => {
+  try {
+    const senderId = req.params.senderId;
+    const sender = await User.findById(senderId);
+    if (!sender) return res.status(404).json({ error: "Sender not found" });
+
+    // Ensure request exists
+    if (!req.user.friendRequests.includes(senderId))
+      return res.status(400).json({ error: "No friend request from this user" });
+
+    // Update both users
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { friendRequests: senderId },
+      $addToSet: { friends: senderId },
+    });
+    await User.findByIdAndUpdate(senderId, {
+      $pull: { sentRequests: req.user._id },
+      $addToSet: { friends: req.user._id },
+    });
+
+    res.json({ message: "Friend request accepted" });
+  } catch (err) {
+    console.error("Accept friend request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.post("/api/friends/reject/:senderId", authMiddleware, async (req, res) => {
+  try {
+    const senderId = req.params.senderId;
+    const sender = await User.findById(senderId);
+    if (!sender) return res.status(404).json({ error: "Sender not found" });
+
+    // Remove request without adding to friends
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { friendRequests: senderId },
+    });
+    await User.findByIdAndUpdate(senderId, {
+      $pull: { sentRequests: req.user._id },
+    });
+
+    res.json({ message: "Friend request rejected" });
+  } catch (err) {
+    console.error("Reject friend request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/api/friends", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate("friends", "name email avatarUrl")
+      .populate("friendRequests", "name email avatarUrl")
+      .populate("sentRequests", "name email avatarUrl");
+
+    res.json({
+      friends: user.friends,
+      friendRequests: user.friendRequests,
+      sentRequests: user.sentRequests,
+    });
+  } catch (err) {
+    console.error("Get friends error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
 
 app.post("/api/rooms", authMiddleware, async (req, res) => {
   const { name, members = [] } = req.body;
@@ -722,11 +749,32 @@ chatNs.on("connection", async (socket) => {
         }
       }
 
+      msgDoc.createdAt = msgDoc.createdAt || new Date();
       // Convert to plain object and include clientTempId
       const msgObj = { ...msgDoc.toObject(), clientTempId };
 
-      // Emit to room
-      chatNs.to(chatId).emit("new-message", msgObj);
+     // ✅ Emit to all room members except sender
+const room = await Room.findById(chatId).select("members");
+if (room && room.members?.length) {
+  room.members.forEach((memberId) => {
+    const memberStr = memberId.toString();
+    const socketSet = onlineUsers.get(memberStr);
+    if (socketSet && memberStr !== uid) {
+      for (const sid of socketSet) {
+        chatNs.to(sid).emit("new-message", msgObj); // send to other users
+      }
+    }
+  });
+}
+
+// ✅ Still emit to sender for confirmation (so it updates status)
+const senderSockets = onlineUsers.get(uid);
+if (senderSockets) {
+  for (const sid of senderSockets) {
+    chatNs.to(sid).emit("new-message", msgObj);
+  }
+}
+
 
       // Send back ack with the same plain object so frontend can update status
       if (ack) ack({ status: "ok", message: msgObj });
@@ -734,8 +782,34 @@ chatNs.on("connection", async (socket) => {
       console.error("send-message error:", err);
       if (ack) ack({ status: "error", error: err.message });
     }
+    
   });
 
+   // ✅ ADD FRIEND REQUEST HANDLER HERE
+  socket.on("send-friend-request", async (targetId) => {
+    const targetSockets = onlineUsers.get(targetId);
+    if (targetSockets) {
+      for (const sid of targetSockets) {
+        chatNs.to(sid).emit("friend-request", {
+          from: { _id: user._id, name: user.name, avatarUrl: user.avatarUrl },
+        });
+      }
+    }
+  });
+
+
+  // --- optional: accept/reject handler if real-time update needed ---
+  socket.on("friend-request-response", async ({ fromId, accepted }) => {
+    const fromSockets = onlineUsers.get(fromId);
+    if (fromSockets) {
+      for (const sid of fromSockets) {
+        chatNs.to(sid).emit("friend-request-status", {
+          to: user._id,
+          accepted,
+        });
+      }
+    }
+  });
 
 
 
@@ -785,7 +859,7 @@ chatNs.on("connection", async (socket) => {
               });
             }
           }
-        } catch (e) {
+        } catch (e) { 
           // ignore
         }
       }
@@ -802,7 +876,7 @@ chatNs.on("connection", async (socket) => {
       if (set.size === 0) {
         onlineUsers.delete(uid);
         // broadcast offline presence
-        socket.broadcast.emit("presence", { userId: uid, online: false });
+        socket.emit("presence", { userId: uid, online: false });
         // re-emit light user list
         await emitLightUserList();
       } else {
@@ -814,8 +888,6 @@ chatNs.on("connection", async (socket) => {
     typingTimers.delete(socket.id);
   });
 });
-
-
 
 // --- Start ---
 const PORT = process.env.PORT || 4000;
