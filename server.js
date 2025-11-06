@@ -241,7 +241,6 @@ app.post("/api/register", async (req, res) => {
 
 
 app.post("/api/login", async (req, res) => {
-  const { email, password } = req.body;
   try {
     const { email, password } = req.body;
 
