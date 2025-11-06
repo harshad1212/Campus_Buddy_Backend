@@ -280,6 +280,101 @@ app.get("/api/rooms", authMiddleware, async (req, res) => {
   res.json(allRooms);
 });
 
+app.post("/api/friends/request/:targetId", authMiddleware, async (req, res) => {
+  try {
+    const targetId = req.params.targetId;
+    if (req.user._id.toString() === targetId)
+      return res.status(400).json({ error: "Cannot send request to yourself" });
+
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) return res.status(404).json({ error: "User not found" });
+
+    // Prevent duplicates
+    if (
+      req.user.friends.includes(targetId) ||
+      req.user.sentRequests.includes(targetId) ||
+      req.user.friendRequests.includes(targetId)
+    ) {
+      return res.status(400).json({ error: "Friend request already exists" });
+    }
+
+    // Update both users
+    await User.findByIdAndUpdate(req.user._id, { $addToSet: { sentRequests: targetId } });
+    await User.findByIdAndUpdate(targetId, { $addToSet: { friendRequests: req.user._id } });
+
+    res.json({ message: "Friend request sent" });
+  } catch (err) {
+    console.error("Send friend request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.post("/api/friends/accept/:senderId", authMiddleware, async (req, res) => {
+  try {
+    const senderId = req.params.senderId;
+    const sender = await User.findById(senderId);
+    if (!sender) return res.status(404).json({ error: "Sender not found" });
+
+    // Ensure request exists
+    if (!req.user.friendRequests.includes(senderId))
+      return res.status(400).json({ error: "No friend request from this user" });
+
+    // Update both users
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { friendRequests: senderId },
+      $addToSet: { friends: senderId },
+    });
+    await User.findByIdAndUpdate(senderId, {
+      $pull: { sentRequests: req.user._id },
+      $addToSet: { friends: req.user._id },
+    });
+
+    res.json({ message: "Friend request accepted" });
+  } catch (err) {
+    console.error("Accept friend request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.post("/api/friends/reject/:senderId", authMiddleware, async (req, res) => {
+  try {
+    const senderId = req.params.senderId;
+    const sender = await User.findById(senderId);
+    if (!sender) return res.status(404).json({ error: "Sender not found" });
+
+    // Remove request without adding to friends
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { friendRequests: senderId },
+    });
+    await User.findByIdAndUpdate(senderId, {
+      $pull: { sentRequests: req.user._id },
+    });
+
+    res.json({ message: "Friend request rejected" });
+  } catch (err) {
+    console.error("Reject friend request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/api/friends", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate("friends", "name email avatarUrl")
+      .populate("friendRequests", "name email avatarUrl")
+      .populate("sentRequests", "name email avatarUrl");
+
+    res.json({
+      friends: user.friends,
+      friendRequests: user.friendRequests,
+      sentRequests: user.sentRequests,
+    });
+  } catch (err) {
+    console.error("Get friends error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
 app.post("/api/rooms", authMiddleware, async (req, res) => {
   const { name, members = [] } = req.body;
   const uniqueMembers = Array.from(new Set([...members.map(String), req.user._id.toString()]));
@@ -654,6 +749,31 @@ if (senderSockets) {
     
   });
 
+   // ✅ ADD FRIEND REQUEST HANDLER HERE
+  socket.on("send-friend-request", async (targetId) => {
+    const targetSockets = onlineUsers.get(targetId);
+    if (targetSockets) {
+      for (const sid of targetSockets) {
+        chatNs.to(sid).emit("friend-request", {
+          from: { _id: user._id, name: user.name, avatarUrl: user.avatarUrl },
+        });
+      }
+    }
+  });
+
+
+  // --- optional: accept/reject handler if real-time update needed ---
+  socket.on("friend-request-response", async ({ fromId, accepted }) => {
+    const fromSockets = onlineUsers.get(fromId);
+    if (fromSockets) {
+      for (const sid of fromSockets) {
+        chatNs.to(sid).emit("friend-request-status", {
+          to: user._id,
+          accepted,
+        });
+      }
+    }
+  });
 
 
 
