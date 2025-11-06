@@ -3,7 +3,7 @@ const bcrypt = require("bcrypt");
 const RegisterRequest = require("../models/RegisterRequest");
 const User = require("../models/User");
 const University = require("../models/University");
-const transporter = require("../utils/mailer");
+const sendEmail = require("../utils/mailer");
 
 const router = express.Router();
 
@@ -78,7 +78,7 @@ router.post("/approve-request/:id", async (req, res) => {
       </div>
     `;
 
-    await transporter({
+    await sendEmail({
       to: request.email,
       subject: "🎉 Registration Approved - CampusBuddy",
       html: htmlTemplate,
@@ -114,7 +114,7 @@ router.post("/reject-request/:id", async (req, res) => {
       </div>
     `;
 
-    await transporter({
+    await sendEmail({
       to: request.email,
       subject: "❌ Registration Rejected - CampusBuddy",
       html: htmlTemplate,
