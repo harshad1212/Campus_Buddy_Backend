@@ -20,20 +20,20 @@ transporter.verify((err, success) => {
 /**
  * sendEmail - A helper function to send emails easily
  */
-// async function sendEmail({ to, subject, html, text }) {
-//   try {
-//     await transporter.sendMail({
-//       from: `"CampusBuddy" <${process.env.EMAIL_USER}>`,
-//       to,
-//       subject,
-//       html,
-//       text,
-//     });
-//     console.log(`📧 Email sent to ${to}`);
-//   } catch (error) {
-//     console.error("❌ Error sending email:", error);
-//   }
-// }
+async function sendEmail({ to, subject, html, text }) {
+  try {
+    await transporter.sendMail({
+      from: `"CampusBuddy" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html,
+      text,
+    });
+    console.log(`📧 Email sent to ${to}`);
+  } catch (error) {
+    console.error("❌ Error sending email:", error);
+  }
+}
 
-// module.exports = sendEmail;
-module.exports = transporter;
+module.exports = sendEmail;
+module.exports  = sendEmail;
