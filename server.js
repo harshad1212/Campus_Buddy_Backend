@@ -64,6 +64,9 @@ const resourceRoutes = require("./routes/resourceRoutes");
 app.use("/api/resources", resourceRoutes);
 app.use("/api/password", passwordResetRoutes);
 
+const friendRoutes = require("./routes/friendRoutes");
+app.use("/api/friends", friendRoutes);
+
 // --- MONGOOSE CONNECT ---
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/chat-app";
 mongoose
@@ -343,22 +346,36 @@ app.post("/api/login", async (req, res) => {
 
 
 // --- Users endpoint (initial sidebar data) ---
+
 app.get("/api/users", authMiddleware, async (req, res) => {
   try {
-    const users = await User.find({ _id: { $ne: req.user._id } }).select("name avatarUrl email");
-    // onlineUsers map is defined in socket block; we'll attach a helper to the namespace object later
+    const currentUser = await User.findById(req.user._id)
+      .select("friends friendRequests sentRequests");
+    const users = await User.find({ _id: { $ne: req.user._id } })
+      .select("name avatarUrl email universityId");
+
     const onlineUsersMap = chatNs.onlineUsersMap || new Map();
+
     const list = users.map((u) => ({
       _id: u._id,
       name: u.name,
       avatarUrl: u.avatarUrl,
+      email: u.email,
       online: onlineUsersMap.has(u._id.toString()),
+      universityId: u.universityId,
     }));
-    res.json(list);
+
+    res.json({
+      users: list,
+      currentUserFriends: currentUser.friends || [],
+      currentUserFriendRequests: currentUser.friendRequests || [],
+      currentUserSentRequests: currentUser.sentRequests || [],
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // --- Rooms ---
 app.get("/api/rooms", authMiddleware, async (req, res) => {
@@ -367,98 +384,8 @@ app.get("/api/rooms", authMiddleware, async (req, res) => {
   res.json(allRooms);
 });
 
-app.post("/api/friends/request/:targetId", authMiddleware, async (req, res) => {
-  try {
-    const targetId = req.params.targetId;
-    if (req.user._id.toString() === targetId)
-      return res.status(400).json({ error: "Cannot send request to yourself" });
 
-    const targetUser = await User.findById(targetId);
-    if (!targetUser) return res.status(404).json({ error: "User not found" });
 
-    // Prevent duplicates
-    if (
-      req.user.friends.includes(targetId) ||
-      req.user.sentRequests.includes(targetId) ||
-      req.user.friendRequests.includes(targetId)
-    ) {
-      return res.status(400).json({ error: "Friend request already exists" });
-    }
-
-    // Update both users
-    await User.findByIdAndUpdate(req.user._id, { $addToSet: { sentRequests: targetId } });
-    await User.findByIdAndUpdate(targetId, { $addToSet: { friendRequests: req.user._id } });
-
-    res.json({ message: "Friend request sent" });
-  } catch (err) {
-    console.error("Send friend request error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-app.post("/api/friends/accept/:senderId", authMiddleware, async (req, res) => {
-  try {
-    const senderId = req.params.senderId;
-    const sender = await User.findById(senderId);
-    if (!sender) return res.status(404).json({ error: "Sender not found" });
-
-    // Ensure request exists
-    if (!req.user.friendRequests.includes(senderId))
-      return res.status(400).json({ error: "No friend request from this user" });
-
-    // Update both users
-    await User.findByIdAndUpdate(req.user._id, {
-      $pull: { friendRequests: senderId },
-      $addToSet: { friends: senderId },
-    });
-    await User.findByIdAndUpdate(senderId, {
-      $pull: { sentRequests: req.user._id },
-      $addToSet: { friends: req.user._id },
-    });
-
-    res.json({ message: "Friend request accepted" });
-  } catch (err) {
-    console.error("Accept friend request error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-app.post("/api/friends/reject/:senderId", authMiddleware, async (req, res) => {
-  try {
-    const senderId = req.params.senderId;
-    const sender = await User.findById(senderId);
-    if (!sender) return res.status(404).json({ error: "Sender not found" });
-
-    // Remove request without adding to friends
-    await User.findByIdAndUpdate(req.user._id, {
-      $pull: { friendRequests: senderId },
-    });
-    await User.findByIdAndUpdate(senderId, {
-      $pull: { sentRequests: req.user._id },
-    });
-
-    res.json({ message: "Friend request rejected" });
-  } catch (err) {
-    console.error("Reject friend request error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.get("/api/friends", authMiddleware, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id)
-      .populate("friends", "name email avatarUrl")
-      .populate("friendRequests", "name email avatarUrl")
-      .populate("sentRequests", "name email avatarUrl");
-
-    res.json({
-      friends: user.friends,
-      friendRequests: user.friendRequests,
-      sentRequests: user.sentRequests,
-    });
-  } catch (err) {
-    console.error("Get friends error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 
 
@@ -733,22 +660,26 @@ chatNs.on("connection", async (socket) => {
   await emitLightUserList();
 
   // Send personalized user list (including unread counts) only to this socket
-  try {
-    const allUsers = await User.find({}).select("name avatarUrl");
-    const unreadMap = await computeUnreadCountsForUser(uid);
-    const personalized = allUsers
-      .filter((u) => u._id.toString() !== uid)
-      .map((u) => ({
-        _id: u._id,
-        name: u.name,
-        avatarUrl: u.avatarUrl,
-        online: onlineUsers.has(u._id.toString()),
-        unreadCount: unreadMap.get(u._id.toString()) || 0,
-      }));
-    socket.emit("user-list", personalized);
-  } catch (err) {
-    console.error("Error preparing personalized user-list:", err);
-  }
+ try {
+  const allUsers = await User.find({}).select("name avatarUrl universityId");
+  const unreadMap = await computeUnreadCountsForUser(uid);
+
+  const personalized = allUsers
+    .filter((u) => u._id.toString() !== uid)
+    .map((u) => ({
+      _id: u._id,
+      name: u.name,
+      avatarUrl: u.avatarUrl,
+      online: onlineUsers.has(u._id.toString()),
+      unreadCount: unreadMap.get(u._id.toString()) || 0,
+      universityId: u.universityId, // include universityId
+    }));
+
+  socket.emit("user-list", personalized);
+} catch (err) {
+  console.error("Error preparing personalized user-list:", err);
+}
+
 
   // Send list of rooms if desired (optional)
   // const rooms = await Room.find({ members: uid }).populate('members', 'name avatarUrl');
@@ -836,31 +767,11 @@ if (senderSockets) {
     
   });
 
-   // ✅ ADD FRIEND REQUEST HANDLER HERE
-  socket.on("send-friend-request", async (targetId) => {
-    const targetSockets = onlineUsers.get(targetId);
-    if (targetSockets) {
-      for (const sid of targetSockets) {
-        chatNs.to(sid).emit("friend-request", {
-          from: { _id: user._id, name: user.name, avatarUrl: user.avatarUrl },
-        });
-      }
-    }
-  });
+  
 
 
-  // --- optional: accept/reject handler if real-time update needed ---
-  socket.on("friend-request-response", async ({ fromId, accepted }) => {
-    const fromSockets = onlineUsers.get(fromId);
-    if (fromSockets) {
-      for (const sid of fromSockets) {
-        chatNs.to(sid).emit("friend-request-status", {
-          to: user._id,
-          accepted,
-        });
-      }
-    }
-  });
+
+
 
 
 
