@@ -47,7 +47,7 @@ router.post("/register-request", async (req, res) => {
         name,
         role,
         university.name,
-        `${process.env.FRONTEND_URL}/admin/dashboard`
+        `${process.env.FRONTEND_URL}/login`
       ),
     });
 

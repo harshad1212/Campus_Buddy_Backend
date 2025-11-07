@@ -103,8 +103,8 @@ const EmailTemplates = {
             <td style="padding:8px; border:1px solid #ddd;">${role}</td>
           </tr>
           <tr>
-            <td style="padding:8px; border:1px solid #ddd;"><strong>Email</strong></td>
-            <td style="padding:8px; border:1px solid #ddd;">${email}</td>
+            <td style="padding:8px; border:1px solid #ddd;"><strong>University</strong></td>
+            <td style="padding:8px; border:1px solid #ddd;">${universityName}</td>
           </tr>
         </table>
 
