@@ -6,6 +6,7 @@ const registerRequestSchema = new mongoose.Schema(
     email: { type: String, required: true },
     password: { type: String, required: true },
     role: { type: String, enum: ["student", "teacher"], required: true },
+    profilePhoto: { type: String },
     universityCode: { type: String, required: true },
     registrationCode: { type: String, required: true },
     status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },

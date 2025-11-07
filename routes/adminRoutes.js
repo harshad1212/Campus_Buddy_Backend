@@ -92,7 +92,7 @@ router.post("/reject-request/:id", async (req, res) => {
     });
 
     await RegisterRequest.findByIdAndDelete(id);
-    res.json({ message: "Request rejected, deleted, and email sent successfully" });
+    res.json({ message: "Request rejected and email sent successfully" });
   } catch (err) {
     console.error("❌ Error rejecting request:", err);
     res.status(500).json({ error: "Server error" });
