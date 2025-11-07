@@ -4,6 +4,7 @@ const RegisterRequest = require("../models/RegisterRequest");
 const User = require("../models/User");
 const University = require("../models/University");
 const transporter = require("../utils/mailer"); // ✅ only transporter
+const EmailTemplates = require("../utils/emailTemplates"); // ✅ reusable templates
 
 const router = express.Router();
 
@@ -50,28 +51,20 @@ router.post("/approve-request/:id", async (req, res) => {
     await newUser.save();
     await RegisterRequest.findByIdAndDelete(id);
 
-    // Send approval email directly using transporter
+    // ✅ Send approval email
     await transporter.sendMail({
       from: `"CampusBuddy" <${process.env.EMAIL_USER}>`,
       to: request.email,
       subject: "🎉 Registration Approved - CampusBuddy",
-      html: `
-        <div style="font-family:Arial,sans-serif; padding:20px; border-radius:10px; background-color:#f9f9f9; border:1px solid #ddd;">
-          <h2 style="color:#2b6cb0;">🎉 Registration Approved!</h2>
-          <p>Hi <b>${request.name}</b>,</p>
-          <p>Your registration as a <b>${request.role}</b> at <b>${university.name}</b> has been approved by the admin.</p>
-          <p>You can now log in to your CampusBuddy account and start using our platform.</p>
-          <a href="${process.env.FRONTEND_URL}/login"
-             style="background-color:#2b6cb0;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;">
-             Login Now
-          </a>
-          <p style="margin-top:20px; font-size:0.9em; color:#555;">Best regards,<br>CampusBuddy Team</p>
-        </div>
-      `,
-      text: `Hello ${request.name}, your registration as ${request.role} at ${university.name} has been approved.`
+      html: EmailTemplates.registrationApproved(
+        request.name,
+        request.role,
+        university.name,
+        `${process.env.FRONTEND_URL}/login`
+      ),
     });
 
-    res.json({ message: "User approved, request deleted, and email sent successfully" });
+    res.json({ message: "User approved and email sent successfully" });
   } catch (err) {
     console.error("❌ Error approving request:", err);
     res.status(500).json({ error: "Server error" });
@@ -87,21 +80,15 @@ router.post("/reject-request/:id", async (req, res) => {
     const request = await RegisterRequest.findById(id);
     if (!request) return res.status(404).json({ error: "Request not found" });
 
-    // Send rejection email directly using transporter
+    const university = await University.findOne({ code: request.universityCode });
+    if (!university) return res.status(404).json({ error: "University not found" });
+
+    // ✅ Send rejection email
     await transporter.sendMail({
       from: `"CampusBuddy" <${process.env.EMAIL_USER}>`,
       to: request.email,
       subject: "❌ Registration Rejected - CampusBuddy",
-      html: `
-        <div style="font-family:Arial,sans-serif; padding:20px; border-radius:10px; background-color:#fff3f3; border:1px solid #f5c2c2;">
-          <h2 style="color:#e53e3e;">❌ Registration Rejected</h2>
-          <p>Hi <b>${request.name}</b>,</p>
-          <p>We're sorry to inform you that your registration request was <b>rejected</b> by the university admin.</p>
-          <p>If you believe this was a mistake, please contact your university admin.</p>
-          <p style="margin-top:20px; font-size:0.9em; color:#555;">Best regards,<br>CampusBuddy Team</p>
-        </div>
-      `,
-      text: `Hello ${request.name}, your registration request was rejected by the university admin.`
+      html: EmailTemplates.registrationRejected(request.name, university.name),
     });
 
     await RegisterRequest.findByIdAndDelete(id);
