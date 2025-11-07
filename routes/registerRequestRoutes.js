@@ -1,17 +1,18 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
-const nodemailer = require("nodemailer");
 const RegisterRequest = require("../models/RegisterRequest");
 const University = require("../models/University");
-const User = require("../models/User");
+const transporter = require("../utils/mailer"); // ✅ centralized transporter
+const EmailTemplates = require("../utils/emailTemplates"); // ✅ reusable templates
 
 const router = express.Router();
 
-// 📩 Student/Teacher submits request
+// 📩 Student/Teacher submits registration request
 router.post("/register-request", async (req, res) => {
   try {
     const { name, email, password, role, universityCode, registrationCode } = req.body;
 
+    // 🔍 Find university
     const university = await University.findOne({ code: universityCode });
     if (!university) return res.status(404).json({ error: "Invalid university code" });
 
@@ -23,12 +24,12 @@ router.post("/register-request", async (req, res) => {
       return res.status(400).json({ error: "Invalid registration code" });
     }
 
-    // ✅ Check if already requested
+    // ✅ Prevent duplicate requests
     const existingReq = await RegisterRequest.findOne({ email });
     if (existingReq) return res.status(400).json({ error: "Request already exists" });
 
-    // ✅ Create request
-    const newReq = await RegisterRequest.create({
+    // ✅ Save registration request
+    await RegisterRequest.create({
       name,
       email,
       password,
@@ -37,34 +38,24 @@ router.post("/register-request", async (req, res) => {
       registrationCode,
     });
 
-    // ✅ Send email to admin
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
+    // 📧 Notify the university admin via email
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: `"CampusBuddy" <${process.env.EMAIL_USER}>`,
       to: university.email,
-      subject: `New ${role} Registration Request`,
-      html: `
-        <h2>New ${role} Registration Request</h2>
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>University Code:</strong> ${universityCode}</p>
-        <p>Please log in to your admin dashboard to approve or reject this request.</p>
-      `,
+      subject: `📥 New ${role} Registration Request`,
+      html: EmailTemplates.registrationRequested(
+        name,
+        role,
+        university.name,
+        `${process.env.FRONTEND_URL}/admin/dashboard`
+      ),
     });
 
-    res.status(201).json({ message: "Registration request submitted" });
+    res.status(201).json({ message: "Registration request submitted successfully." });
   } catch (err) {
-    console.error("Register Request Error:", err);
+    console.error("❌ Register Request Error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
-
 
 module.exports = router;
