@@ -1,21 +1,20 @@
+// models/RegisterRequest.js
 const mongoose = require("mongoose");
 
-const registerRequestSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    email: { type: String, required: true },
-    password: { type: String, required: true },
-    role: { type: String, enum: ["student", "teacher"], required: true },
-    profilePhoto: { type: String },
-    universityCode: { type: String, required: true },
-    registrationCode: { type: String, required: true },
-    status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
-    isApproved: {
-      type: Boolean,
-      default: false,
-    },
-  },
-  { timestamps: true }
+const RegisterRequestSchema = new mongoose.Schema({
+  name: String,
+  email: String,
+  password: String,
+  role: String,
+  universityCode: String,
+  registrationCode: String,
+  profilePhoto: String, // Cloudinary URL
+  cloudinaryId: String, // Cloudinary public ID
+  status: { type: String, default: "pending" },
+},
+{
+    timestamps: true, // ✅ THIS adds createdAt and updatedAt automatically
+  }
 );
 
-module.exports = mongoose.model("RegisterRequest", registerRequestSchema);
+module.exports = mongoose.model("RegisterRequest", RegisterRequestSchema);
