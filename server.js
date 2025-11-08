@@ -67,6 +67,10 @@ app.use("/api/password", passwordResetRoutes);
 const friendRoutes = require("./routes/friendRoutes");
 app.use("/api/friends", friendRoutes);
 
+const roomRoutes = require("./routes/roomRoutes");
+app.use("/api/rooms", roomRoutes);
+
+
 // --- MONGOOSE CONNECT ---
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/chat-app";
 mongoose
@@ -370,6 +374,7 @@ app.get("/api/users", authMiddleware, async (req, res) => {
       currentUserFriends: currentUser.friends || [],
       currentUserFriendRequests: currentUser.friendRequests || [],
       currentUserSentRequests: currentUser.sentRequests || [],
+      currentUserBlockedUsers: currentUser.blockedUsers || [],
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
