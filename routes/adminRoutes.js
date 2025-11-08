@@ -34,24 +34,31 @@ router.post("/approve-request/:id", async (req, res) => {
     if (!request) return res.status(404).json({ error: "Request not found" });
 
     const existingUser = await User.findOne({ email: request.email });
-    if (existingUser) return res.status(400).json({ error: "User already registered" });
+    if (existingUser)
+      return res.status(400).json({ error: "User already registered" });
 
     const university = await University.findOne({ code: request.universityCode });
-    if (!university) return res.status(404).json({ error: "University not found" });
+    if (!university)
+      return res.status(404).json({ error: "University not found" });
 
+    // ✅ Hash password before creating user
     const hashedPassword = await bcrypt.hash(request.password, 10);
+
     const newUser = new User({
       name: request.name,
       email: request.email,
       password: hashedPassword,
       role: request.role,
       universityId: university._id,
+      avatarUrl: request.profilePhoto || null, // ✅ copy from request
+      cloudinaryId: request.cloudinaryId || null,
       isApproved: true,
     });
+
     await newUser.save();
     await RegisterRequest.findByIdAndDelete(id);
 
-    // ✅ Send approval email
+    // 📧 Send approval email
     await transporter.sendMail({
       from: `"CampusBuddy" <${process.env.EMAIL_USER}>`,
       to: request.email,
@@ -64,7 +71,7 @@ router.post("/approve-request/:id", async (req, res) => {
       ),
     });
 
-    res.json({ message: "User approved and email sent successfully" });
+    res.json({ message: "User approved and profile photo copied successfully." });
   } catch (err) {
     console.error("❌ Error approving request:", err);
     res.status(500).json({ error: "Server error" });
@@ -72,7 +79,7 @@ router.post("/approve-request/:id", async (req, res) => {
 });
 
 /**
- * ✅ POST reject registration request
+ * ❌ Reject registration request
  */
 router.post("/reject-request/:id", async (req, res) => {
   try {
@@ -83,7 +90,16 @@ router.post("/reject-request/:id", async (req, res) => {
     const university = await University.findOne({ code: request.universityCode });
     if (!university) return res.status(404).json({ error: "University not found" });
 
-    // ✅ Send rejection email
+    // 🧹 Delete profile photo from Cloudinary (optional)
+    if (request.cloudinaryId) {
+      try {
+        await cloudinary.uploader.destroy(request.cloudinaryId);
+      } catch (err) {
+        console.warn("⚠️ Cloudinary cleanup failed:", err.message);
+      }
+    }
+
+    // 📧 Send rejection email
     await transporter.sendMail({
       from: `"CampusBuddy" <${process.env.EMAIL_USER}>`,
       to: request.email,
@@ -92,7 +108,7 @@ router.post("/reject-request/:id", async (req, res) => {
     });
 
     await RegisterRequest.findByIdAndDelete(id);
-    res.json({ message: "Request rejected, deleted, and email sent successfully" });
+    res.json({ message: "Request rejected and email sent successfully." });
   } catch (err) {
     console.error("❌ Error rejecting request:", err);
     res.status(500).json({ error: "Server error" });
