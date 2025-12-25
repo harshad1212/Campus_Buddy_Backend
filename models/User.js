@@ -4,35 +4,112 @@ const { Schema } = mongoose;
 
 const userSchema = new Schema(
   {
+    /* ================= AUTH ================= */
     role: {
       type: String,
       enum: ["student", "teacher", "admin", "superadmin"],
-      default: "student",
+      required: true,
     },
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    universityId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "University",
-      required: false, // ✅ for superadmin (no university)
-    },
-    resetToken: String,
-    resetTokenExpiry: Date,
-    avatarUrl: String,
 
-    // 👇 THIS IS THE IMPORTANT FIX
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+    },
+
+    password: {
+      type: String,
+      required: true,
+    },
+
     isApproved: {
       type: Boolean,
       default: false,
     },
-    friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
+    /* ================= UNIVERSITY ================= */
+    universityId: {
+      type: Schema.Types.ObjectId,
+      ref: "University",
+      required: false, // superadmin has no university
+    },
+
+    universityCode: {
+      type: String,
+    },
+
+    department: {
+      type: String,
+    },
+
+    course: {
+      type: String,
+    },
+
+    semester: {
+      type: Number, // student
+    },
+
+    /* ================= ROLE-SPECIFIC ================= */
+    enrollmentNumber: {
+      type: String, // student
+    },
+
+    employeeId: {
+      type: String, // teacher
+    },
+
+    designation: {
+      type: String, // teacher
+    },
+
+    /* ================= PERSONAL ================= */
+    phone: {
+      type: String,
+    },
+
+    gender: {
+      type: String,
+      enum: ["male", "female", "other"],
+    },
+
+    dob: {
+      type: Date,
+    },
+
+    address: {
+      type: String,
+    },
+
+    /* ================= MEDIA ================= */
+    avatarUrl: {
+      type: String,
+    },
+
+    avatarCloudId: {
+      type: String,
+    },
+
+    /* ================= SOCIAL ================= */
+    friends: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    friendRequests: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    sentRequests: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    blockedUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
+
+    /* ================= META ================= */
+    resetToken: String,
+    resetTokenExpiry: Date,
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 module.exports = mongoose.model("User", userSchema);
