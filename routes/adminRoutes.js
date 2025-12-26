@@ -49,14 +49,13 @@ router.post("/approve-request/:id", async (req, res) => {
       password: hashedPassword,
 
       phone: request.phone,
-      gender: request.gender,
+      gender: request.gender.toLowerCase(),
       dob: request.dob,
       address: request.address,
 
       universityId: university?._id,
       universityCode: request.universityCode,
       department: request.department,
-      course: request.course,
       semester: request.semester,
 
       enrollmentNumber: request.enrollmentNumber,

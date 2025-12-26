@@ -196,42 +196,64 @@ app.post("/api/register", async (req, res) => {
       universityCode,
       teacherCode,
       studentCode,
+      departments, // ✅ ADD THIS
     } = req.body;
 
-    // Basic validation
-    if (!name || !email || !password || !role)
+    /* ---------- BASIC VALIDATION ---------- */
+    if (!name || !email || !password || !role) {
       return res.status(400).json({ error: "All fields are required" });
+    }
 
     const existingUser = await User.findOne({ email });
-    if (existingUser)
+    if (existingUser) {
       return res.status(400).json({ error: "Email already registered" });
+    }
 
-    let university = null;
     const hashedPassword = await bcrypt.hash(password, 10);
+    let university = null;
 
-    // 🏫 Admin registering → create a new university with admin info
+    /* ---------- ADMIN REGISTRATION ---------- */
     if (role === "admin") {
-      if (!universityName || !universityCode || !teacherCode || !studentCode)
-        return res
-          .status(400)
-          .json({ error: "University info & registration codes required" });
+      if (
+        !universityName ||
+        !universityCode ||
+        !teacherCode ||
+        !studentCode
+      ) {
+        return res.status(400).json({
+          error: "University info & registration codes required",
+        });
+      }
 
-      const existingUni = await University.findOne({ code: universityCode });
-      if (existingUni)
-        return res.status(400).json({ error: "University code already exists" });
+      if (!Array.isArray(departments) || departments.length === 0) {
+        return res.status(400).json({
+          error: "At least one department is required",
+        });
+      }
 
-      // Create University with admin email/password
-      university = await University.create({
-        name: universityName,
-        code: universityCode,
-        email,
-        password: hashedPassword,
-        teacherCode,
-        studentCode,
-        adminId: null, // will link after creating User
+      const existingUni = await University.findOne({
+        code: universityCode.toUpperCase(),
       });
 
-      // Create User for the admin
+      if (existingUni) {
+        return res.status(400).json({
+          error: "University code already exists",
+        });
+      }
+
+      /* ---------- CREATE UNIVERSITY ---------- */
+      university = await University.create({
+        name: universityName.trim(),
+        code: universityCode.toUpperCase().trim(),
+        email: email.toLowerCase().trim(),
+        password: hashedPassword,
+        teacherCode: teacherCode.trim(),
+        studentCode: studentCode.trim(),
+        departments: departments.map((d) => d.trim()), // ✅ FIX
+        adminId: null,
+      });
+
+      /* ---------- CREATE ADMIN USER ---------- */
       const adminUser = await User.create({
         name,
         email,
@@ -241,17 +263,35 @@ app.post("/api/register", async (req, res) => {
         avatarUrl: `https://i.pravatar.cc/150?u=${email}`,
       });
 
-      // Link adminId in University
+      /* ---------- LINK ADMIN ---------- */
       university.adminId = adminUser._id;
       await university.save();
 
       const token = signToken(adminUser);
+
       return res.status(201).json({
         message: "University and admin registered successfully",
         user: adminUser,
         token,
       });
     }
+
+//     return res.status(400).json({ error: "Invalid role" });
+//   } catch (err) {
+//     console.error("❌ Registration error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+    app.get(
+      "/api/university/department/:department/semesters",
+      (req, res) => {
+        res.json({
+          semesters: [1, 2, 3, 4, 5, 6, 7, 8],
+        });
+      }
+    );
+
+
 
     // 👑 Superadmin doesn’t belong to a university
     if (role === "superadmin") {
