@@ -30,59 +30,37 @@ const pointHistorySchema = new Schema(
 
 const userSchema = new Schema(
   {
+    /* ================= AUTH ================= */
     role: {
       type: String,
       enum: ["student", "teacher", "admin", "superadmin"],
-      default: "student",
+      required: true,
     },
-
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-
     universityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "University",
-      required: false,
+      required: false, // ✅ for superadmin (no university)
     },
-
-    avatarUrl: String,
     resetToken: String,
     resetTokenExpiry: Date,
+    avatarUrl: String,
 
     isApproved: {
       type: Boolean,
       default: false,
     },
-
     friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
-    // ⭐ LEADERBOARD POINT SYSTEM
-    points: {
-      total: {
-        type: Number,
-        default: 0,
-      },
-
-      breakdown: {
-        resourceUpload: { type: Number, default: 0 },
-        resourceDownload: { type: Number, default: 0 },
-        resourceLike: { type: Number, default: 0 },
-
-        forumAnswer: { type: Number, default: 0 },
-        forumBestAnswer: { type: Number, default: 0 },
-
-        eventParticipation: { type: Number, default: 0 },
-        eventWin: { type: Number, default: 0 },
-      },
-
-      history: [pointHistorySchema], // optional but recommended
-    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 module.exports = mongoose.model("User", userSchema);
