@@ -1,6 +1,8 @@
+// models/User.js
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
+/* ================= POINT HISTORY ================= */
 const pointHistorySchema = new Schema(
   {
     type: {
@@ -14,10 +16,14 @@ const pointHistorySchema = new Schema(
         "EVENT_WIN",
         "ADMIN_ADJUSTMENT",
       ],
+      required: true,
     },
-    points: Number,
+    points: {
+      type: Number,
+      required: true,
+    },
     refId: {
-      type: mongoose.Schema.Types.ObjectId, // resourceId, questionId, eventId, etc.
+      type: Schema.Types.ObjectId, // resourceId, questionId, eventId, etc.
     },
     description: String,
     createdAt: {
@@ -28,6 +34,7 @@ const pointHistorySchema = new Schema(
   { _id: false }
 );
 
+/* ================= USER SCHEMA ================= */
 const userSchema = new Schema(
   {
     /* ================= AUTH ================= */
@@ -36,27 +43,79 @@ const userSchema = new Schema(
       enum: ["student", "teacher", "admin", "superadmin"],
       required: true,
     },
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    universityId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "University",
-      required: false, // ✅ for superadmin (no university)
+
+    name: {
+      type: String,
+      required: true,
+      trim: true,
     },
-    resetToken: String,
-    resetTokenExpiry: Date,
-    avatarUrl: String,
+
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+    },
+
+    password: {
+      type: String,
+      required: true,
+    },
 
     isApproved: {
       type: Boolean,
       default: false,
     },
-    friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
+    /* ================= UNIVERSITY ================= */
+    universityId: {
+      type: Schema.Types.ObjectId,
+      ref: "University",
+      required: false, // superadmin has no university
+    },
+
+    universityCode: String,
+    department: String,
+    course: String,
+    semester: Number,
+
+    /* ================= ROLE-SPECIFIC ================= */
+    enrollmentNumber: String, // student
+    employeeId: String,       // teacher
+    designation: String,      // teacher
+
+    /* ================= PERSONAL ================= */
+    phone: String,
+
+    gender: {
+      type: String,
+      enum: ["male", "female", "other"],
+    },
+
+    dob: Date,
+    address: String,
+
+    /* ================= MEDIA ================= */
+    avatarUrl: String,
+    avatarCloudId: String,
+
+    /* ================= SOCIAL ================= */
+    friends: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    friendRequests: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    sentRequests: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    blockedUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
+
+    /* ================= POINT SYSTEM ================= */
+    totalPoints: {
+      type: Number,
+      default: 0,
+    },
+
+    pointHistory: [pointHistorySchema],
+
+    /* ================= META ================= */
+    resetToken: String,
+    resetTokenExpiry: Date,
   },
   {
     timestamps: true,
