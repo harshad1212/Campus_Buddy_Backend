@@ -70,6 +70,14 @@ app.use("/api/friends", friendRoutes);
 const roomRoutes = require("./routes/roomRoutes");
 app.use("/api/rooms", roomRoutes);
 
+const forumRoutes = require("./routes/forumRoutes");  
+app.use("/api/forum", forumRoutes);
+console.log("Forum routes mounted");
+
+const leaderboardRoutes = require("./routes/leaderboard");
+app.use("/api/leaderboard", leaderboardRoutes);
+
+
 
 // --- MONGOOSE CONNECT ---
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/chat-app";

@@ -1,7 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const Event = require("../models/Event");
-const { authMiddleware } = require("../middleware/auth");
+
+// ✅ FIXED IMPORT
+const authMiddleware = require("../middleware/auth");
 
 // ✅ Create event (Student/Teacher)
 router.post("/", authMiddleware, async (req, res) => {
@@ -16,7 +18,7 @@ router.post("/", authMiddleware, async (req, res) => {
       venue,
       creatorId: req.user._id,
       creatorName: req.user.name,
-      approvedByAdmin: req.user.role === "admin" ? true : false,
+      approvedByAdmin: req.user.role === "admin",
       approvedAt: req.user.role === "admin" ? new Date() : undefined,
     });
 
