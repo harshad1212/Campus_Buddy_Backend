@@ -1,3 +1,4 @@
+// routes/leaderboard.js
 const express = require("express");
 const User = require("../models/User");
 const authMiddleware = require("../middleware/auth");
@@ -10,58 +11,51 @@ const router = express.Router();
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const users = await User.find({ isApproved: true })
-      .select("name avatarUrl points")
-      .sort({ "points.total": -1 });
+      .select("name avatarUrl totalPoints pointHistory");
 
-    const leaderboard = users.map((user, index) => {
-      const rank = index + 1;
+    const leaderboard = users.map((user) => {
+      let resourcePoints = 0;
+      let forumPoints = 0;
+      let eventPoints = 0;
 
-      // 🧮 SAFE POINT EXTRACTION (matches schema exactly)
-      const breakdown = user.points?.breakdown || {};
+      user.pointHistory.forEach((p) => {
+        if (
+          ["RESOURCE_UPLOAD", "RESOURCE_DOWNLOAD", "RESOURCE_LIKE"].includes(p.type)
+        ) {
+          resourcePoints += p.points;
+        }
 
-      const resourcePoints =
-        (breakdown.resourceUpload || 0) +
-        (breakdown.resourceDownload || 0) +
-        (breakdown.resourceLike || 0);
+        if (p.type === "FORUM_ANSWER") {
+          forumPoints += p.points;
+        }
 
-      const forumPoints =
-        (breakdown.forumAnswer || 0) +
-        (breakdown.forumBestAnswer || 0);
+        if (
+          ["EVENT_PARTICIPATION", "EVENT_WIN"].includes(p.type)
+        ) {
+          eventPoints += p.points;
+        }
+      });
 
-      const eventPoints =
-        (breakdown.eventParticipation || 0) +
-        (breakdown.eventWin || 0);
-
-      const totalPoints = user.points?.total || 0;
-
-      // 🥇 Rank Badge
-      let rankBadge = "Bronze";
-      if (rank === 1) rankBadge = "Gold";
-      else if (rank === 2) rankBadge = "Silver";
-
-      // 🎖 Forum Badges (derived dynamically)
       const forumBadges = [];
-      if ((breakdown.forumAnswer || 0) >= 50)
-        forumBadges.push("Top Helper");
-      if ((breakdown.forumBestAnswer || 0) >= 5)
-        forumBadges.push("Best Answers");
+      if (forumPoints >= 50) forumBadges.push("Top Helper");
 
       return {
         userId: user._id,
-        rank,
         name: user.name,
         avatarUrl: user.avatarUrl,
 
-        // 🔢 Points per category
-        points: totalPoints,
+        points: user.totalPoints,
         resourcePoints,
         forumPoints,
         eventPoints,
 
-        rankBadge,
         forumBadges,
       };
     });
+
+    // 🥇 Sort & Rank
+    leaderboard.sort((a, b) => b.points - a.points);
+    leaderboard.forEach((u, i) => (u.rank = i + 1));
 
     res.status(200).json(leaderboard);
   } catch (err) {

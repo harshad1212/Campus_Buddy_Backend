@@ -23,7 +23,7 @@ const pointHistorySchema = new Schema(
       required: true,
     },
     refId: {
-      type: Schema.Types.ObjectId, // resourceId, questionId, eventId, etc.
+      type: Schema.Types.ObjectId,
     },
     description: String,
     createdAt: {
@@ -37,7 +37,6 @@ const pointHistorySchema = new Schema(
 /* ================= USER SCHEMA ================= */
 const userSchema = new Schema(
   {
-    /* ================= AUTH ================= */
     role: {
       type: String,
       enum: ["student", "teacher", "admin", "superadmin"],
@@ -67,11 +66,9 @@ const userSchema = new Schema(
       default: false,
     },
 
-    /* ================= UNIVERSITY ================= */
     universityId: {
       type: Schema.Types.ObjectId,
       ref: "University",
-      required: false, // superadmin has no university
     },
 
     universityCode: String,
@@ -79,12 +76,10 @@ const userSchema = new Schema(
     course: String,
     semester: Number,
 
-    /* ================= ROLE-SPECIFIC ================= */
-    enrollmentNumber: String, // student
-    employeeId: String,       // teacher
-    designation: String,      // teacher
+    enrollmentNumber: String,
+    employeeId: String,
+    designation: String,
 
-    /* ================= PERSONAL ================= */
     phone: String,
 
     gender: {
@@ -95,11 +90,9 @@ const userSchema = new Schema(
     dob: Date,
     address: String,
 
-    /* ================= MEDIA ================= */
     avatarUrl: String,
     avatarCloudId: String,
 
-    /* ================= SOCIAL ================= */
     friends: [{ type: Schema.Types.ObjectId, ref: "User" }],
     friendRequests: [{ type: Schema.Types.ObjectId, ref: "User" }],
     sentRequests: [{ type: Schema.Types.ObjectId, ref: "User" }],
@@ -113,13 +106,10 @@ const userSchema = new Schema(
 
     pointHistory: [pointHistorySchema],
 
-    /* ================= META ================= */
     resetToken: String,
     resetTokenExpiry: Date,
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 module.exports = mongoose.model("User", userSchema);

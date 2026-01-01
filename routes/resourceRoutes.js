@@ -3,90 +3,109 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const cloudinary = require("cloudinary").v2;
+
 const Resource = require("../models/Resource");
 const authMiddleware = require("../middleware/auth");
+const addPoints = require("../utils/addPoints"); // ⭐ IMPORTANT
 
 const router = express.Router();
 
-// ✅ Cloudinary Config
+/* ================= CLOUDINARY CONFIG ================= */
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ✅ Multer temp upload folder
+/* ================= MULTER ================= */
 const upload = multer({ dest: "uploads/resources" });
 
-/**
- * 📁 Upload a new resource
- */
-router.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
-  try {
-    const { title, description, subject, stream, semester } = req.body;
-    const file = req.file;
+/* =====================================================
+   📁 UPLOAD RESOURCE
+===================================================== */
+router.post(
+  "/upload",
+  authMiddleware,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      const { title, description, subject, stream, semester } = req.body;
+      const file = req.file;
 
-    if (!file) return res.status(400).json({ error: "No file uploaded" });
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
 
-    const universityId = req.user.universityId; // ✅ Fix: get from logged-in user
-    if (!universityId) {
-      return res.status(400).json({ error: "User is not linked to a university" });
+      const universityId = req.user.universityId;
+      if (!universityId) {
+        return res
+          .status(400)
+          .json({ error: "User is not linked to a university" });
+      }
+
+      // Clean filename
+      const ext = path.extname(file.originalname);
+      const baseName = path
+        .basename(file.originalname, ext)
+        .replace(/\s+/g, "_");
+      const cleanName = `${baseName}${ext}`;
+
+      // Upload to Cloudinary
+      const result = await cloudinary.uploader.upload(file.path, {
+        folder: "resources_uploads",
+        resource_type: "raw",
+        public_id: cleanName,
+        use_filename: true,
+        unique_filename: false,
+        format: ext.substring(1),
+      });
+
+      fs.unlinkSync(file.path);
+
+      // Save resource
+      const newResource = new Resource({
+        title,
+        description,
+        subject,
+        stream,
+        semester,
+        fileUrl: result.secure_url,
+        fileName: cleanName,
+        fileType: file.mimetype,
+        universityId,
+        uploader: req.user._id,
+        downloadCount: 0,
+      });
+
+      await newResource.save();
+
+      // ⭐ ADD POINTS (UPLOAD)
+      await addPoints({
+        userId: req.user._id,
+        type: "RESOURCE_UPLOAD",
+        points: 10,
+        refId: newResource._id,
+        description: "Uploaded a resource",
+      });
+
+      res.status(201).json({
+        message: "✅ Resource uploaded successfully",
+        resource: newResource,
+      });
+    } catch (err) {
+      console.error("❌ Upload Error:", err);
+      res.status(500).json({ error: "Failed to upload resource" });
     }
-
-    // Clean file name
-    const ext = path.extname(file.originalname);
-    const baseName = path.basename(file.originalname, ext).replace(/\s+/g, "_");
-    const cleanName = `${baseName}${ext}`;
-
-    // Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(file.path, {
-      folder: "resources_uploads",
-      resource_type: "raw",
-      public_id: cleanName,
-      use_filename: true,
-      unique_filename: false,
-      format: ext.substring(1),
-    });
-
-    // Remove temp file
-    fs.unlinkSync(file.path);
-
-    // Save to MongoDB
-    const newResource = new Resource({
-      title,
-      description,
-      subject,
-      stream,
-      semester,
-      fileUrl: result.secure_url,
-      fileName: cleanName,
-      fileType: file.mimetype,
-      universityId,
-      uploader: req.user._id,
-      downloadCount: 0,
-    });
-
-    await newResource.save();
-    res.status(201).json({
-      message: "✅ Resource uploaded successfully",
-      resource: newResource,
-    });
-  } catch (err) {
-    console.error("❌ Upload Error:", err);
-    res.status(500).json({ error: "Failed to upload resource" });
   }
-});
+);
 
-/**
- * 📚 Get all resources (filtered)
- */
+/* =====================================================
+   📚 GET ALL RESOURCES
+===================================================== */
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const { stream, semester, subject } = req.query;
-    const filters = {};
-
-    // Filter by logged-in user's university
-    filters.universityId = req.user.universityId;
+    const filters = { universityId: req.user.universityId };
 
     if (stream) filters.stream = stream.trim();
     if (semester) filters.semester = Number(semester);
@@ -104,21 +123,34 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-
-/**
- * ❤️ Like / Unlike a resource
- */
+/* =====================================================
+   ❤️ LIKE / UNLIKE RESOURCE
+===================================================== */
 router.post("/:id/like", authMiddleware, async (req, res) => {
   try {
     const resource = await Resource.findById(req.params.id);
-    if (!resource) return res.status(404).json({ message: "Resource not found" });
+    if (!resource)
+      return res.status(404).json({ message: "Resource not found" });
 
     const userId = req.user.id;
     const alreadyLiked = resource.likes.includes(userId);
 
-    if (alreadyLiked)
-      resource.likes = resource.likes.filter((uid) => uid.toString() !== userId);
-    else resource.likes.push(userId);
+    if (alreadyLiked) {
+      resource.likes = resource.likes.filter(
+        (uid) => uid.toString() !== userId
+      );
+    } else {
+      resource.likes.push(userId);
+
+      // ⭐ ADD POINTS TO UPLOADER
+      await addPoints({
+        userId: resource.uploader.toString(),
+        type: "RESOURCE_LIKE",
+        points: 2,
+        refId: resource._id,
+        description: "Resource liked",
+      });
+    }
 
     await resource.save();
 
@@ -132,16 +164,18 @@ router.post("/:id/like", authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * 💬 Add comment
- */
+/* =====================================================
+   💬 ADD COMMENT
+===================================================== */
 router.post("/:id/comment", authMiddleware, async (req, res) => {
   try {
     const { text } = req.body;
-    if (!text) return res.status(400).json({ message: "Comment text is required" });
+    if (!text)
+      return res.status(400).json({ message: "Comment text is required" });
 
     const resource = await Resource.findById(req.params.id);
-    if (!resource) return res.status(404).json({ message: "Resource not found" });
+    if (!resource)
+      return res.status(404).json({ message: "Resource not found" });
 
     resource.comments.push({
       user: req.user._id,
@@ -155,25 +189,34 @@ router.post("/:id/comment", authMiddleware, async (req, res) => {
       "comments.user",
       "name"
     );
-    const lastComment = populated.comments[populated.comments.length - 1];
 
-    res.json(lastComment);
+    res.json(populated.comments.at(-1));
   } catch (err) {
     console.error("❌ Comment error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-/**
- * 📥 Download Resource (increment count)
- */
+/* =====================================================
+   📥 DOWNLOAD RESOURCE
+===================================================== */
 router.get("/:id/download", authMiddleware, async (req, res) => {
   try {
     const resource = await Resource.findById(req.params.id);
-    if (!resource) return res.status(404).json({ message: "Resource not found" });
+    if (!resource)
+      return res.status(404).json({ message: "Resource not found" });
 
     resource.downloadCount += 1;
     await resource.save();
+
+    // ⭐ ADD POINTS TO UPLOADER
+    await addPoints({
+      userId: resource.uploader,
+      type: "RESOURCE_DOWNLOAD",
+      points: 1,
+      refId: resource._id,
+      description: "Resource downloaded",
+    });
 
     res.json({
       message: "✅ Download count updated",
@@ -186,51 +229,50 @@ router.get("/:id/download", authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * 👤 Get all resources uploaded by the logged-in user
- */
+/* =====================================================
+   👤 MY RESOURCES
+===================================================== */
 router.get("/my", authMiddleware, async (req, res) => {
   try {
     const uploaderId = req.query.uploaderId || req.user.id;
+
     const resources = await Resource.find({ uploader: uploaderId })
       .populate("uploader", "name email")
       .sort({ createdAt: -1 });
 
-    return res.status(200).json(resources || []);
+    res.status(200).json(resources || []);
   } catch (err) {
-    console.error("❌ Error fetching user resources:", err);
-    res.status(500).json({ message: "Server error while fetching user resources." });
+    console.error("❌ My resources error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-/**
- * 🗑️ Delete a resource (only uploader can delete)
- */
+/* =====================================================
+   🗑️ DELETE RESOURCE
+===================================================== */
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {
-    const resourceId = req.params.id;
-    const userId = req.user.id;
+    const resource = await Resource.findById(req.params.id);
+    if (!resource)
+      return res.status(404).json({ message: "Resource not found" });
 
-    const resource = await Resource.findById(resourceId);
-    if (!resource) return res.status(404).json({ message: "Resource not found." });
-
-    if (resource.uploader.toString() !== userId)
-      return res.status(403).json({ message: "Not authorized to delete this resource." });
-
-    if (resource.fileUrl && resource.fileUrl.includes("cloudinary")) {
-      try {
-        const publicId = resource.fileUrl.split("/").pop().split(".")[0];
-        await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
-      } catch (cloudErr) {
-        console.warn("⚠️ Cloudinary delete warning:", cloudErr.message);
-      }
+    if (resource.uploader.toString() !== req.user.id) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to delete this resource" });
     }
 
-    await Resource.findByIdAndDelete(resourceId);
-    res.status(200).json({ message: "✅ Resource deleted successfully." });
+    if (resource.fileUrl?.includes("cloudinary")) {
+      const publicId = resource.fileUrl.split("/").pop().split(".")[0];
+      await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
+    }
+
+    await Resource.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({ message: "✅ Resource deleted successfully" });
   } catch (err) {
-    console.error("❌ Error deleting resource:", err);
-    res.status(500).json({ message: "Server error while deleting resource." });
+    console.error("❌ Delete error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
