@@ -15,6 +15,7 @@ const pointHistorySchema = new Schema(
         "EVENT_PARTICIPATION",
         "EVENT_WIN",
         "ADMIN_ADJUSTMENT",
+        "FORUM_UPVOTE"
       ],
       required: true,
     },

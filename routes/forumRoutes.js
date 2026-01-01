@@ -107,59 +107,45 @@ router.post("/answer/:questionId", authMiddleware, async (req, res) => {
  */
 router.post("/vote/:questionId/:answerId", authMiddleware, async (req, res) => {
   try {
-    const { vote } = req.body;
+    const { vote } = req.body; // 1 or -1
     if (![1, -1].includes(vote)) {
       return res.status(400).json({ message: "Invalid vote value" });
     }
 
     const question = await ForumQuestion.findById(req.params.questionId);
-    if (!question) {
-      return res.status(404).json({ message: "Question not found" });
-    }
+    if (!question) return res.status(404).json({ message: "Question not found" });
 
     const answer = question.answers.id(req.params.answerId);
-    if (!answer) {
-      return res.status(404).json({ message: "Answer not found" });
-    }
+    if (!answer) return res.status(404).json({ message: "Answer not found" });
 
-    const existingVote = answer.voters.find(
+    const voterIndex = answer.voters.findIndex(
       (v) => v.userId.toString() === req.user._id.toString()
     );
 
-    if (existingVote) {
-      // ❌ Same vote again → block
-      if (existingVote.vote === vote) {
-        return res.status(400).json({ message: "Already voted" });
-      }
-
-      // 🔁 Switch vote (👍 → 👎 or 👎 → 👍)
-      answer.votes -= existingVote.vote; // remove old
-      existingVote.vote = vote;
-      answer.votes += vote; // apply new
-    } else {
-      // 🆕 First vote
+    // 🟢 FIRST TIME VOTE
+    if (voterIndex === -1) {
       answer.voters.push({ userId: req.user._id, vote });
       answer.votes += vote;
-
-      // ⭐ Points ONLY on first UPVOTE
-      if (vote === 1) {
-        await addPoints({
-          userId: answer.userId,
-          type:  "FORUM_ANSWER",
-          type: "FORUM_UPVOTE",
-          points: 2,
-          refId: answer._id,
-          description: "Answer upvoted",
-        });
-      }
+    }
+    // 🟡 SAME VOTE CLICKED AGAIN → REMOVE VOTE
+    else if (answer.voters[voterIndex].vote === vote) {
+      answer.votes -= vote;
+      answer.voters.splice(voterIndex, 1);
+    }
+    // 🔁 SWITCH VOTE (UP ↔ DOWN)
+    else {
+      answer.votes += vote * 2; // THIS IS THE KEY FIX
+      answer.voters[voterIndex].vote = vote;
     }
 
     await question.save();
-    res.json({ votes: answer.votes });
+
+    res.json(question); // return full question (frontend expects this)
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
+
 
 
 /**
@@ -171,9 +157,7 @@ router.post(
   async (req, res) => {
     try {
       const question = await ForumQuestion.findById(req.params.questionId);
-      if (!question) {
-        return res.status(404).json({ message: "Question not found" });
-      }
+      if (!question) return res.status(404).json({ message: "Question not found" });
 
       if (question.askedBy.toString() !== req.user._id.toString()) {
         return res.status(403).json({ message: "Not authorized" });
@@ -182,11 +166,10 @@ router.post(
       question.answers.forEach((a) => (a.isBestAnswer = false));
 
       const bestAnswer = question.answers.id(req.params.answerId);
-      if (!bestAnswer) {
-        return res.status(404).json({ message: "Answer not found" });
-      }
+      if (!bestAnswer) return res.status(404).json({ message: "Answer not found" });
 
       bestAnswer.isBestAnswer = true;
+
       await addPoints({
         userId: bestAnswer.userId,
         type: "FORUM_BEST_ANSWER",
@@ -195,48 +178,13 @@ router.post(
         description: "Marked as best answer",
       });
 
-
       await question.save();
-      res.json({ success: true });
+      res.json(question);
     } catch (err) {
       res.status(500).json({ message: err.message });
     }
   }
 );
 
-/* ===============================
-   Best Answer
-================================ */
-router.post("/best-answer/:questionId/:answerId", authMiddleware, async (req, res) => {
-  try {
-    const question = await ForumQuestion.findById(req.params.questionId);
-    if (!question) return res.status(404).json({ message: "Question not found" });
-
-    if (question.askedBy.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    question.answers.forEach((a) => (a.isBestAnswer = false));
-
-    const bestAnswer = question.answers.id(req.params.answerId);
-    if (!bestAnswer) return res.status(404).json({ message: "Answer not found" });
-
-    bestAnswer.isBestAnswer = true;
-
-    await addPoints({
-      userId: bestAnswer.userId,
-      type: "FORUM_BEST_ANSWER",
-      type: "FORUM_BEST_ANSWER",
-      points: 10,
-      refId: bestAnswer._id,
-      description: "Marked as best answer",
-    });
-
-    await question.save();
-    res.json(question);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
 
 module.exports = router;
