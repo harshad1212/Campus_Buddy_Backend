@@ -12,20 +12,23 @@ const addPoints = async ({
 }) => {
   if (!userId || !type || !points) return;
 
-  await User.findByIdAndUpdate(userId, {
-    $inc: {
-      "points.total": points,
-      [`points.breakdown.${type}`]: points,
-    },
-    $push: {
-      "points.history": {
-        type: type.toUpperCase(),
-        points,
-        refId,
-        description,
+  await User.findByIdAndUpdate(
+    userId,
+    {
+      $inc: {
+        totalPoints: points,
+      },
+      $push: {
+        pointHistory: {
+          type, // MUST match enum exactly
+          points,
+          refId,
+          description,
+        },
       },
     },
-  });
+    { new: true }
+  );
 };
 
 module.exports = addPoints;

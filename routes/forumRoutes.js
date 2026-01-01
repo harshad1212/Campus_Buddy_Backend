@@ -87,7 +87,7 @@ router.post("/answer/:questionId", authMiddleware, async (req, res) => {
 
     await addPoints({
       userId: req.user._id,
-      type: "forumAnswer",
+      type:  "FORUM_ANSWER",
       points: 5,
       refId: question._id,
       description: "Posted a forum answer",
@@ -203,7 +203,7 @@ router.post("/vote/:questionId/:answerId", authMiddleware, async (req, res) => {
       if (vote === 1) {
         await addPoints({
           userId: answer.userId,
-          type: "forumAnswer",
+          type:  "FORUM_ANSWER",
           points: 2,
           refId: answer._id,
           description: "Answer upvoted",
@@ -247,7 +247,7 @@ router.post(
       bestAnswer.isBestAnswer = true;
       await addPoints({
         userId: bestAnswer.userId,
-        type: "forumBestAnswer",
+        type: "FORUM_BEST_ANSWER",
         points: 10,
         refId: bestAnswer._id,
         description: "Marked as best answer",
@@ -279,7 +279,7 @@ router.post("/best-answer/:questionId/:answerId", authMiddleware, async (req, re
 
     await addPoints({
       userId: bestAnswer.userId,
-      type: "forumBestAnswer",
+      type: "FORUM_BEST_ANSWER",
       points: 10,
       refId: bestAnswer._id,
       description: "Marked as best answer",
