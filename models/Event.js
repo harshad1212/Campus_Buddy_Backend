@@ -1,18 +1,24 @@
 const mongoose = require("mongoose");
 
-const eventSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  description: String,
-  date: { type: Date, required: true },
-  time: String,
-  venue: String,
-  creatorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  universityId: { type: mongoose.Schema.Types.ObjectId, ref: "University", required: true },
-  creatorName: String,
-  approvedByAdmin: { type: Boolean, default: false },
-  approvedAt: { type: Date },
-  attendees: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  createdAt: { type: Date, default: Date.now },
-});
+const eventSchema = new mongoose.Schema(
+  {
+    title: String,
+    description: String,
+    date: Date,
+    time: String,
+    venue: String,
+    category: String,
+    attendees: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // 🔥 ADMIN APPROVAL
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+  },
+  { timestamps: true }
+);
 
 module.exports = mongoose.model("Event", eventSchema);

@@ -22,12 +22,13 @@ const Room = require("./models/Room");
 const Message = require("./models/Message");
 const passwordResetRoutes = require("./routes/passwordReset");
 
-const eventRoutes = require("./routes/events");
+const eventRoutes = require("./routes/eventRoutes");
 const cloudinary = require('cloudinary').v2;
 const adminRoutes = require("./routes/adminRoutes");
 const universityRoutes = require("./routes/universityRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const registerRequestRoutes = require("./routes/registerRequestRoutes");
+const authMiddleware = require("./middleware/auth");
 
 // Cloudinary config
 cloudinary.config({
@@ -169,20 +170,20 @@ function signToken(user) {
   );
 }
 
-async function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "No token" });
-  const token = authHeader.split(" ")[1];
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(payload.id);
-    if (!user) return res.status(401).json({ error: "User not found" });
-    req.user = user;
-    next();
-  } catch (e) {
-    return res.status(401).json({ error: "Invalid token" });
-  }
-}
+// async function authMiddleware(req, res, next) {
+//   const authHeader = req.headers.authorization;
+//   if (!authHeader) return res.status(401).json({ error: "No token" });
+//   const token = authHeader.split(" ")[1];
+//   try {
+//     const payload = jwt.verify(token, JWT_SECRET);
+//     const user = await User.findById(payload.id);
+//     if (!user) return res.status(401).json({ error: "User not found" });
+//     req.user = user;
+//     next();
+//   } catch (e) {
+//     return res.status(401).json({ error: "Invalid token" });
+//   }
+// }
 
 // --- Start server & Socket.IO early so we can emit from endpoints ---
 const server = http.createServer(app);

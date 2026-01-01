@@ -1,34 +1,34 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
-const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
+const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
 
-async function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "No token provided" });
-  }
-
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") {
-    return res.status(401).json({ error: "Invalid token format" });
-  }
-
-  const token = parts[1];
-
+const authMiddleware = async (req, res, next) => {
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(payload.id);
+    const authHeader = req.headers.authorization;
 
+    if (!authHeader) {
+      return res.status(401).json({ error: "Authorization token missing" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ error: "Invalid token format" });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const user = await User.findById(decoded.id).select("-password");
     if (!user) {
       return res.status(401).json({ error: "User not found" });
     }
 
-    req.user = user;
+    req.user = user; // 🔥 attached for all protected routes
     next();
-  } catch (err) {
-    return res.status(401).json({ error: "Invalid token" });
+  } catch (error) {
+    console.error("Auth error:", error.message);
+    return res.status(401).json({ error: "Invalid or expired token" });
   }
-}
+};
 
 module.exports = authMiddleware;
