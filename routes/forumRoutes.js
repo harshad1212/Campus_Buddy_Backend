@@ -86,7 +86,7 @@ router.post("/answer/:questionId", authMiddleware, async (req, res) => {
 
     await addPoints({
       userId: req.user._id,
-      type: "FORUM_ANSWER",
+      type:  "FORUM_ANSWER",
       points: 5,
       refId: question._id,
       description: "Posted a forum answer",
