@@ -1,31 +1,55 @@
+const mongoose = require("mongoose");
 const User = require("../models/User");
 
-/**
- * Generic helper to add points safely
- */
 const addPoints = async ({
   userId,
   type,
   points,
-  refId,
-  description,
+  refId = null,
+  description = "",
 }) => {
-  if (!userId || !type || !points) return;
+  try {
+    if (!userId) {
+      console.error("🔴 addPoints failed: userId is missing");
+      return;
+    }
 
-  await User.findByIdAndUpdate(userId, {
-    $inc: {
-      "points.total": points,
-      [`points.breakdown.${type}`]: points,
-    },
-    $push: {
-      "points.history": {
-        type: type.toUpperCase(),
-        points,
-        refId,
-        description,
+    const normalizedUserId = mongoose.Types.ObjectId.isValid(userId)
+      ? userId
+      : null;
+
+    if (!normalizedUserId) {
+      console.error("🔴 addPoints failed: invalid userId", userId);
+      return;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      normalizedUserId,
+      {
+        $inc: { totalPoints: points },
+        $push: {
+          pointHistory: {
+            type,
+            points,
+            refId,
+            description,
+          },
+        },
       },
-    },
-  });
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      console.error("🔴 addPoints failed: user not found", normalizedUserId);
+      return;
+    }
+
+    console.log(
+      `✅ Points added: ${points} (${type}) → User ${updatedUser._id}`
+    );
+  } catch (err) {
+    console.error("❌ addPoints exception:", err.message);
+  }
 };
 
 module.exports = addPoints;
