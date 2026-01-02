@@ -29,6 +29,7 @@ const universityRoutes = require("./routes/universityRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const registerRequestRoutes = require("./routes/registerRequestRoutes");
 const authMiddleware = require("./middleware/auth");
+const userRoutes = require("./routes/userRoutes");
 
 // Cloudinary config
 cloudinary.config({
@@ -77,7 +78,9 @@ console.log("Forum routes mounted");
 
 const leaderboardRoutes = require("./routes/leaderboard");
 app.use("/api/leaderboard", leaderboardRoutes);
+app.use("/api/admin/events", require("./routes/adminEvents"));
 
+app.use("/api/users", userRoutes);
 
 
 // --- MONGOOSE CONNECT ---
@@ -385,11 +388,13 @@ app.post("/api/login", async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        isApproved: user.isApproved, // ✅ REQUIRED
         avatarUrl: user.avatarUrl,
         universityId: user.universityId?._id || null,
-        universityCode, // ✅ always included now
+        universityCode,
         universityName,
       },
+
     });
   } catch (err) {
     console.error("Login error:", err);

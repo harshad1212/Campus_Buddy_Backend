@@ -1,88 +1,165 @@
 const express = require("express");
-const router = express.Router();
 const Event = require("../models/Event");
-const authMiddleware = require("../middleware/auth");
+const auth = require("../middleware/auth");
+const role = require("../middleware/roleMiddleware");
 
-// CREATE EVENT
-router.post("/", authMiddleware, async (req, res) => {
-  try {
-    const event = await Event.create({
-      ...req.body,
-      createdBy: req.user._id,
-    });
-    res.status(201).json(event);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+const router = express.Router();
 
-// GET ALL EVENTS
-router.get("/", authMiddleware, async (req, res) => {
-  try {
-    const events = await Event.find().sort({ date: 1 });
-    res.json(events);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-// GET SINGLE EVENT
-router.get("/:id", authMiddleware, async (req, res) => {
-  try {
-    const event = await Event.findById(req.params.id)
-      .populate("attendees", "name");
+/* =========================================================
+   TEACHER: CREATE EVENT (FULL DATA STORED)
+   ========================================================= */
+router.post(
+  "/",
+  auth,
+  role(["teacher"]),
+  async (req, res) => {
+    try {
+      const {
+        title,
+        description,
+        date,
+        time,
+        venue,
+        eventType,
+        mode,
+        department,
+        organizers,
+        deadline,
+        contactEmail,
+        registrationLink,
+        notes,
+      } = req.body;
 
-    if (!event) return res.status(404).json({ error: "Event not found" });
+      // Basic validation
+      if (!title || !date || !time || !venue || !department || !organizers?.length) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
 
-    res.json(event);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-// GET ALL EVENTS (ADMIN)
-router.get("/admin/all", authMiddleware, async (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Access denied" });
-  }
+      const event = await Event.create({
+        title,
+        description,
+        date,
+        time,
+        venue,
+        eventType,
+        mode,
+        department,
+        organizers,
+        deadline,
+        contactEmail,
+        registrationLink,
+        notes,
+        createdBy: req.user._id,
+        universityCode: req.user.universityCode,
+      });
 
-  const events = await Event.find()
-    .populate("createdBy", "name email")
-    .sort({ createdAt: -1 });
-
-  res.json(events);
-});
-
-// UPDATE EVENT STATUS
-router.patch("/admin/:id/status", authMiddleware, async (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Access denied" });
-  }
-
-  const { status } = req.body;
-
-  const event = await Event.findByIdAndUpdate(
-    req.params.id,
-    { status },
-    { new: true }
-  );
-
-  res.json(event);
-});
-
-// JOIN EVENT
-router.post("/:id/join", authMiddleware, async (req, res) => {
-  try {
-    const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ error: "Event not found" });
-
-    if (!event.attendees.includes(req.user._id)) {
-      event.attendees.push(req.user._id);
-      await event.save();
+      res.status(201).json({
+        message: "Event sent for admin approval",
+        event,
+      });
+    } catch (err) {
+      console.error("CREATE EVENT ERROR:", err);
+      res.status(500).json({ error: err.message });
     }
-
-    res.json(event);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
-});
+);
+
+/* =========================================================
+   STUDENT + TEACHER: VIEW APPROVED EVENTS
+   ========================================================= */
+router.get(
+  "/",
+  auth,
+  async (req, res) => {
+    try {
+      const events = await Event.find({
+        universityCode: req.user.universityCode,
+        status: "approved",
+      })
+        .populate("organizers", "name department email")
+        .sort({ date: 1, time: 1 });
+
+      res.json(events);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  }
+);
+
+/* =========================================================
+   ADMIN: VIEW PENDING EVENTS (FULL DETAILS)
+   ========================================================= */
+router.get(
+  "/admin/pending/:universityCode",
+  auth,
+  role(["admin", "superadmin"]),
+  async (req, res) => {
+    try {
+      const events = await Event.find({
+        universityCode: req.params.universityCode,
+        status: "pending",
+      })
+        .populate("createdBy", "name email department")
+        .populate("organizers", "name department email")
+        .sort({ createdAt: -1 });
+
+      res.json(events);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch pending events" });
+    }
+  }
+);
+
+/* =========================================================
+   ADMIN: APPROVE / REJECT EVENT
+   ========================================================= */
+router.post(
+  "/admin/action/:id",
+  auth,
+  role(["admin", "superadmin"]),
+  async (req, res) => {
+    try {
+      const { action } = req.body;
+
+      if (!["approve", "reject"].includes(action)) {
+        return res.status(400).json({ error: "Invalid action" });
+      }
+
+      const status = action === "approve" ? "approved" : "rejected";
+
+      await Event.findByIdAndUpdate(req.params.id, {
+        status,
+        reviewedBy: req.user._id,
+      });
+
+      res.json({ message: `Event ${status}` });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update event status" });
+    }
+  }
+);
+
+/* =========================================================
+   ADMIN / TEACHER: VIEW ALL EVENTS (OPTIONAL BUT RECOMMENDED)
+   ========================================================= */
+router.get(
+  "/all",
+  auth,
+  role(["admin", "teacher"]),
+  async (req, res) => {
+    try {
+      const events = await Event.find({
+        universityCode: req.user.universityCode,
+      })
+        .populate("organizers", "name department")
+        .populate("createdBy", "name")
+        .sort({ date: 1 });
+
+      res.json(events);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  }
+);
 
 module.exports = router;
