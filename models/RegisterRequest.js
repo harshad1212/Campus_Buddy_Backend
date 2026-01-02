@@ -16,7 +16,6 @@ const RegisterRequestSchema = new mongoose.Schema(
     // Academic
     universityCode: String,
     department: String,
-    course: String,
     semester: Number,
 
     registrationCode: String,
