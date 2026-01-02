@@ -1,4 +1,3 @@
-// routes/forumroutes.js
 const express = require("express");
 const ForumQuestion = require("../models/ForumQuestion");
 const authMiddleware = require("../middleware/auth");
@@ -23,7 +22,11 @@ router.post("/question", authMiddleware, async (req, res) => {
       askedBy: req.user._id,
     });
 
-    res.status(201).json(newQuestion);
+    const populatedQuestion = await ForumQuestion.findById(newQuestion._id)
+      .populate("askedBy", "name avatarUrl")
+      .populate("answers.userId", "name avatarUrl");
+
+    res.status(201).json(populatedQuestion);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -93,21 +96,93 @@ router.post("/answer/:questionId", authMiddleware, async (req, res) => {
     });
 
     await question.save();
-    res.json(question);
+
+    const populatedQuestion = await ForumQuestion.findById(question._id)
+      .populate("askedBy", "name avatarUrl")
+      .populate("answers.userId", "name avatarUrl");
+
+    res.json(populatedQuestion);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
 /* ===============================
-   Vote Answer (FINAL)
+   Edit Answer
 ================================ */
-/**
- * 5️⃣ Vote Answer (LIKE ↔ DISLIKE SWITCH ALLOWED)
- */
+router.put("/answer/:questionId/:answerId", authMiddleware, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text)
+      return res.status(400).json({ message: "Answer text required" });
+
+    const question = await ForumQuestion.findById(req.params.questionId);
+    if (!question)
+      return res.status(404).json({ message: "Question not found" });
+
+    const answer = question.answers.id(req.params.answerId);
+    if (!answer)
+      return res.status(404).json({ message: "Answer not found" });
+
+    if (
+      answer.userId.toString() !== req.user._id.toString() &&
+      req.user.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    answer.text = text;
+    await question.save();
+
+    const populatedQuestion = await ForumQuestion.findById(question._id)
+      .populate("askedBy", "name avatarUrl")
+      .populate("answers.userId", "name avatarUrl");
+
+    res.json(populatedQuestion);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/* ===============================
+   Delete Answer
+================================ */
+router.delete("/answer/:questionId/:answerId", authMiddleware, async (req, res) => {
+  try {
+    const question = await ForumQuestion.findById(req.params.questionId);
+    if (!question)
+      return res.status(404).json({ message: "Question not found" });
+
+    const answer = question.answers.id(req.params.answerId);
+    if (!answer)
+      return res.status(404).json({ message: "Answer not found" });
+
+    if (
+      answer.userId.toString() !== req.user._id.toString() &&
+      req.user.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    answer.deleteOne();
+    await question.save();
+
+    const populatedQuestion = await ForumQuestion.findById(question._id)
+      .populate("askedBy", "name avatarUrl")
+      .populate("answers.userId", "name avatarUrl");
+
+    res.json(populatedQuestion);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/* ===============================
+   Vote Answer
+================================ */
 router.post("/vote/:questionId/:answerId", authMiddleware, async (req, res) => {
   try {
-    const { vote } = req.body; // 1 or -1
+    const { vote } = req.body;
     if (![1, -1].includes(vote)) {
       return res.status(400).json({ message: "Invalid vote value" });
     }
@@ -122,42 +197,40 @@ router.post("/vote/:questionId/:answerId", authMiddleware, async (req, res) => {
       (v) => v.userId.toString() === req.user._id.toString()
     );
 
-    // 🟢 FIRST TIME VOTE
     if (voterIndex === -1) {
       answer.voters.push({ userId: req.user._id, vote });
       answer.votes += vote;
-    }
-    // 🟡 SAME VOTE CLICKED AGAIN → REMOVE VOTE
-    else if (answer.voters[voterIndex].vote === vote) {
+    } else if (answer.voters[voterIndex].vote === vote) {
       answer.votes -= vote;
       answer.voters.splice(voterIndex, 1);
-    }
-    // 🔁 SWITCH VOTE (UP ↔ DOWN)
-    else {
-      answer.votes += vote * 2; // THIS IS THE KEY FIX
+    } else {
+      answer.votes += vote * 2;
       answer.voters[voterIndex].vote = vote;
     }
 
     await question.save();
 
-    res.json(question); // return full question (frontend expects this)
+    const populatedQuestion = await ForumQuestion.findById(question._id)
+      .populate("askedBy", "name avatarUrl")
+      .populate("answers.userId", "name avatarUrl");
+
+    res.json(populatedQuestion);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-
-
-/**
- * 6️⃣ Mark Best Answer
- */
+/* ===============================
+   Mark Best Answer
+================================ */
 router.post(
   "/best-answer/:questionId/:answerId",
   authMiddleware,
   async (req, res) => {
     try {
       const question = await ForumQuestion.findById(req.params.questionId);
-      if (!question) return res.status(404).json({ message: "Question not found" });
+      if (!question)
+        return res.status(404).json({ message: "Question not found" });
 
       if (question.askedBy.toString() !== req.user._id.toString()) {
         return res.status(403).json({ message: "Not authorized" });
@@ -166,7 +239,8 @@ router.post(
       question.answers.forEach((a) => (a.isBestAnswer = false));
 
       const bestAnswer = question.answers.id(req.params.answerId);
-      if (!bestAnswer) return res.status(404).json({ message: "Answer not found" });
+      if (!bestAnswer)
+        return res.status(404).json({ message: "Answer not found" });
 
       bestAnswer.isBestAnswer = true;
 
@@ -179,12 +253,16 @@ router.post(
       });
 
       await question.save();
-      res.json(question);
+
+      const populatedQuestion = await ForumQuestion.findById(question._id)
+        .populate("askedBy", "name avatarUrl")
+        .populate("answers.userId", "name avatarUrl");
+
+      res.json(populatedQuestion);
     } catch (err) {
       res.status(500).json({ message: err.message });
     }
   }
 );
-
 
 module.exports = router;
