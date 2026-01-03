@@ -18,6 +18,10 @@ router.get("/pending", auth, isAdmin, async (req, res) => {
     "createdBy",
     "name"
   );
+  events.forEach(e => {
+  console.log("Organizers field:", e.organizers);
+});
+
   res.json(events);
 });
 

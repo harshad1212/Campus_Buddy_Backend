@@ -55,7 +55,7 @@ const eventSchema = new Schema(
     /* ================= ORGANIZERS ================= */
     organizers: [
       {
-        type: Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: true,
       },
