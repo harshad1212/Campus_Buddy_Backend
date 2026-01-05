@@ -30,6 +30,7 @@ const superAdminRoutes = require("./routes/superAdminRoutes");
 const registerRequestRoutes = require("./routes/registerRequestRoutes");
 const authMiddleware = require("./middleware/auth");
 const userRoutes = require("./routes/userRoutes");
+const statsRoutes = require("./routes/stats");
 
 // Cloudinary config
 cloudinary.config({
@@ -81,6 +82,7 @@ app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/admin/events", require("./routes/adminEvents"));
 
 app.use("/api/users", userRoutes);
+app.use("/api/stats", statsRoutes);
 
 
 // --- MONGOOSE CONNECT ---

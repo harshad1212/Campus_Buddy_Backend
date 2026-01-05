@@ -12,6 +12,7 @@ const pointHistorySchema = new Schema(
         "RESOURCE_DOWNLOAD",
         "RESOURCE_LIKE",
         "FORUM_ANSWER",
+        "FORUM_BEST_ANSWER",
         "EVENT_PARTICIPATION",
         "EVENT_WIN",
         "ADMIN_ADJUSTMENT",
