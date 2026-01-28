@@ -941,7 +941,6 @@ if (senderSockets) {
         lastSeen: new Date(),
       });
 
-      await emitLightUserList();
     } else {
       onlineUsers.set(uid, set);
     }
