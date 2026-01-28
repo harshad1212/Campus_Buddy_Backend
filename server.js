@@ -911,6 +911,9 @@ if (senderSockets) {
     typingTimers.delete(socket.id);
   });
 });
+app.get("/", (req, res) => {
+  res.send("Campus Buddy Backend is running 🚀");
+});
 
 // --- Start ---
 const PORT = process.env.PORT || 4000;
