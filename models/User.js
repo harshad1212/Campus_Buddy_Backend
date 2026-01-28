@@ -99,6 +99,17 @@ const userSchema = new Schema(
     friendRequests: [{ type: Schema.Types.ObjectId, ref: "User" }],
     sentRequests: [{ type: Schema.Types.ObjectId, ref: "User" }],
     blockedUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    /* ================= PRESENCE ================= */
+    isOnline: {
+      type: Boolean,
+      default: false,
+    },
+
+    lastSeen: {
+      type: Date,
+      default: null,
+    },
+
 
     /* ================= POINT SYSTEM ================= */
     totalPoints: {
@@ -111,6 +122,7 @@ const userSchema = new Schema(
     resetToken: String,
     resetTokenExpiry: Date,
   },
+  
   { timestamps: true }
 );
 

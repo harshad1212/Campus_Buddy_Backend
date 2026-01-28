@@ -713,15 +713,46 @@ chatNs.on("connection", async (socket) => {
   const user = socket.user;
   const uid = user._id.toString();
 
-  // multiple sockets per user supported
+  /* =====================
+     MULTI-SOCKET SUPPORT
+  ===================== */
   const set = onlineUsers.get(uid) || new Set();
   set.add(socket.id);
   onlineUsers.set(uid, set);
 
-  // Notify others (broadcast) that this user is online
-  socket.broadcast.emit("presence", { userId: uid, online: true });
-  // also emit an updated light user list to everyone (so their online flags update)
+  /* =====================
+     PERSIST ONLINE STATUS
+  ===================== */
+  await User.findByIdAndUpdate(uid, {
+    isOnline: true,
+    lastSeen: null,
+  });
+
+  /* =====================
+     SEND FULL PRESENCE SNAPSHOT
+     (THIS FIXES DISAPPEARING USERS)
+  ===================== */
+  const presenceSnapshot = await User.find(
+    { universityId: user.universityId },
+    "_id isOnline lastSeen"
+  );
+
+  socket.emit("presence:bulk", presenceSnapshot);
+
+  /* =====================
+     BROADCAST THIS USER ONLINE
+  ===================== */
+  socket.broadcast.emit("presence", {
+    userId: uid,
+    online: true,
+    lastSeen: null,
+  });
+
+  /* =====================
+     RE-EMIT LIGHT USER LIST
+  ===================== */
   await emitLightUserList();
+
 
   // Send personalized user list (including unread counts) only to this socket
  try {
@@ -895,24 +926,33 @@ if (senderSockets) {
   });
 
   socket.on("disconnect", async () => {
-    // remove socket id
-    const set = onlineUsers.get(uid);
-    if (set) {
-      set.delete(socket.id);
-      if (set.size === 0) {
-        onlineUsers.delete(uid);
-        // broadcast offline presence
-        socket.emit("presence", { userId: uid, online: false });
-        // re-emit light user list
-        await emitLightUserList();
-      } else {
-        onlineUsers.set(uid, set);
-      }
+  const set = onlineUsers.get(uid);
+  if (set) {
+    set.delete(socket.id);
+    if (set.size === 0) {
+      onlineUsers.delete(uid);
+
+      await User.findByIdAndUpdate(uid, {
+        isOnline: false,
+        lastSeen: new Date(),
+      });
+
+      socket.broadcast.emit("presence", {
+        userId: uid,
+        online: false,
+        lastSeen: new Date(),
+      });
+
+      await emitLightUserList();
+    } else {
+      onlineUsers.set(uid, set);
     }
-    // cleanup typing timer if any
-    clearTimeout(typingTimers.get(socket.id));
-    typingTimers.delete(socket.id);
-  });
+  }
+
+  clearTimeout(typingTimers.get(socket.id));
+  typingTimers.delete(socket.id);
+});
+
 });
 
 // --- Start ---
