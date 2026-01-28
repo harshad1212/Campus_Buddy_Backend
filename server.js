@@ -706,7 +706,6 @@ async function broadcastPresenceChange(userId, online) {
   // broadcast presence to all other sockets
   chatNs.emit("presence", { userId, online });
   // re-emit light user-list so front-ends can update online flags more easily
-  await emitLightUserList();
 }
 
 chatNs.on("connection", async (socket) => {
@@ -751,7 +750,6 @@ chatNs.on("connection", async (socket) => {
   /* =====================
      RE-EMIT LIGHT USER LIST
   ===================== */
-  await emitLightUserList();
 
 
   // Send personalized user list (including unread counts) only to this socket
