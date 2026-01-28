@@ -59,7 +59,7 @@ router.post("/register-request", upload.single("profilePhoto"), async (req, res)
       ),
     })
     .then(() => console.log("📧 Email sent"))
-  .catch(err => console.warn("📧 Email skipped:", err.message));;
+  .catch(err => console.warn("📧 Email skipped:", err.message));s;
 
     res.status(201).json({ message: "Registration request submitted", request });
   } catch (err) {
