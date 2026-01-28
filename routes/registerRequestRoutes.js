@@ -48,7 +48,7 @@ router.post("/register-request", upload.single("profilePhoto"), async (req, res)
 
     await request.save();
 
-    await transporter.sendMail({
+    transporter.sendMail({
       to: university.email,
       subject: `📥 New ${req.body.role.toUpperCase()} Registration`,
       html: EmailTemplates.registrationRequested(
@@ -57,7 +57,9 @@ router.post("/register-request", upload.single("profilePhoto"), async (req, res)
         university.name,
         `${process.env.FRONTEND_URL}/login`
       ),
-    });
+    })
+    .then(() => console.log("📧 Email sent"))
+  .catch(err => console.warn("📧 Email skipped:", err.message));;
 
     res.status(201).json({ message: "Registration request submitted", request });
   } catch (err) {
