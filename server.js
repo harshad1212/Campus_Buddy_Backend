@@ -100,6 +100,9 @@ mongoose
 
 const fs = require("fs");
 const upload = multer({ dest: "uploads/" }); // local temp folder
+app.get("/", (req, res) => {
+  res.status(200).send("Campus Buddy Backend is running 🚀");
+});
 
 app.post("/api/upload", authMiddleware, upload.array("files"), async (req, res) => {
   try {
@@ -910,9 +913,6 @@ if (senderSockets) {
     clearTimeout(typingTimers.get(socket.id));
     typingTimers.delete(socket.id);
   });
-});
-app.get("/", (req, res) => {
-  res.send("Campus Buddy Backend is running 🚀");
 });
 
 // --- Start ---
