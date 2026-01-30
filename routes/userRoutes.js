@@ -24,5 +24,32 @@ router.get("/teachers/:code", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch teachers" });
   }
 });
+/**
+ * GET ALL USERS + FRIEND DATA (FOR CHAT)
+ * GET /api/users
+ */
+router.get("/", authMiddleware, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user._id);
+
+    // 1️⃣ Fetch ALL users from same university (including friends)
+    const users = await User.find({
+      universityId: currentUser.universityId,
+      _id: { $ne: currentUser._id },
+    }).select("_id name avatarUrl universityId");
+
+    // 2️⃣ Send users + friend metadata
+    res.json({
+      users,
+      currentUserFriends: currentUser.friends,
+      currentUserFriendRequests: currentUser.friendRequests,
+      currentUserSentRequests: currentUser.sentRequests,
+      currentUserBlockedUsers: currentUser.blockedUsers,
+    });
+  } catch (err) {
+    console.error("GET USERS ERROR:", err);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
 
 module.exports = router;

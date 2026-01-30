@@ -60,6 +60,13 @@ app.use(
   })
 );
 
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
 // Multer uploads dir
 
 // --- RESOURCE ROUTE ---
@@ -706,6 +713,7 @@ async function broadcastPresenceChange(userId, online) {
   // broadcast presence to all other sockets
   chatNs.emit("presence", { userId, online });
   // re-emit light user-list so front-ends can update online flags more easily
+  await emitLightUserList();
 }
 
 chatNs.on("connection", async (socket) => {
@@ -750,6 +758,7 @@ chatNs.on("connection", async (socket) => {
   /* =====================
      RE-EMIT LIGHT USER LIST
   ===================== */
+  await emitLightUserList();
 
 
   // Send personalized user list (including unread counts) only to this socket
@@ -941,6 +950,7 @@ if (senderSockets) {
         lastSeen: new Date(),
       });
 
+      await emitLightUserList();
     } else {
       onlineUsers.set(uid, set);
     }
