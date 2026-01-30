@@ -11,7 +11,16 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ error: "Authorization token missing" });
     }
 
-    const token = authHeader.split(" ")[1];
+    if (!authHeader.startsWith("Bearer ")) {
+  return res.status(401).json({ error: "Token must be Bearer token" });
+}
+
+const token = authHeader.split(" ")[1];
+
+if (!token || token === "undefined") {
+  return res.status(401).json({ error: "Token missing or invalid" });
+}
+
     if (!token) {
       return res.status(401).json({ error: "Invalid token format" });
     }
